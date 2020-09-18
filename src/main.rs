@@ -2,7 +2,7 @@ use rand::Rng;
 use std::io;
 use std::cmp::Ordering;
 
-fn main() {
+fn game_loop() {
     println!("Guess the number!");
 
     // pick a random number 1-101 inclusive
@@ -14,7 +14,7 @@ fn main() {
 
         let mut guess = String::new();
 
-        // read a number
+        // read a line to the guess tring
         io::stdin()
             .read_line(&mut guess)
             .expect("Fail to read line");
@@ -39,4 +39,39 @@ fn main() {
             }
         }
     }
+
+    // once you've won, ask to play again
+    println!("Would you like to play again (yes/no)?");
+    loop {
+        // read the answers
+        let mut answer = String::new();
+        io::stdin()
+            .read_line(&mut answer)
+            .expect("Failed to read answer");
+
+
+        // not really sure what as_ref() does tbh
+        match answer.trim().as_ref() {
+            "yes" => {
+                // restart the game
+                game_loop();
+            }
+            "no" => {
+                // end the game
+                println!("Goodbye!");
+                break;
+            }
+            _ => {
+                // prompt them again
+                println!("Please input yes or no.");
+                continue;
+            }
+        }
+    }
+}
+
+fn main() {
+    println!("Welcome to Guess the Number!");
+
+    game_loop();
 }
