@@ -1,18 +1,25 @@
-// returns the nth fibonacci number
+// https://en.wikipedia.org/wiki/Collatz_conjecture
+// returns the nth hailstone number
 // u32 gives the best performance for the sizes of numbers that we can compute in a reasonable amount
 // of time (tested with benchmark)
 // this means that the highest number we can return or take as input is 4294967295
-fn fibonacci (number : u32) -> u32 {
-    if number == 0 || number == 1 {
-        return number;
+fn hailstone (number : u128) -> u128 {
+    print!("{} ", number);
+
+    return if number == 1 {
+        1
+    } else if number % 2 == 0 {
+        hailstone(number / 2)
+    } else {
+        hailstone(3 * number + 1)
     }
-    return fibonacci(number - 1) + fibonacci(number - 2);
 }
 
 fn main() {
-    println!("Fibonacci benchmark");
+    println!("Hailstone sequence");
 
-    for i in 0..40 {
-        println!("#{}: {}", i, fibonacci(i))
-    }
+    // calculate the hailstone sequence (?) for the highest unsigned 128-bit number
+    hailstone(u128::max_value());
+
+    print!("");
 }
