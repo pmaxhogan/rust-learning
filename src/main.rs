@@ -5,13 +5,21 @@ use std::ops::Sub;
 
 
 fn main() {
-    let now = Instant::now();
+    let FPS = 60;
 
-    println!("hi");
+    let program_start = Instant::now();
+    for _ in 0..FPS {
+        let now = Instant::now();
 
-    // add some delay
-    sleep(Duration::from_millis(3));
+        println!("hi");
 
-    println!("This frame took {:#?}", now.elapsed());
-    sleep(Duration::from_secs(2).sub( now.elapsed()));
+        // add some delay
+        sleep(Duration::from_millis(3));
+
+        println!("This frame took {:#?}", now.elapsed());
+        sleep(Duration::from_secs_f32(1f32 / (FPS as f32)).sub(now.elapsed()));
+        println!("Total frame time: {:#?}", now.elapsed());
+    }
+
+    println!("Extra time: {:#?}ms", (program_start.elapsed().as_secs_f64() - 1f64) * 1000f64);
 }
