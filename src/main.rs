@@ -6,6 +6,7 @@ const FPS:usize = 60;
 use std::time::{Duration, Instant};
 use std::thread::sleep;
 use std::ops::Sub;
+use std::thread;
 
 struct Obstacle{
     x: usize,
@@ -94,6 +95,14 @@ fn draw(display: &[[Pixel; HEIGHT]; WIDTH]) {
 }
 
 fn main() {
+    let handle = thread::spawn(|| {
+        for i in 1..10 {
+            println!("hi number {} from the spawned thread!", i);
+            thread::sleep(Duration::from_millis(1));
+        }
+    });
+
+
     let mut display = [[Pixel::Empty; HEIGHT]; WIDTH];
     let mut state = State{
         player: Player {
