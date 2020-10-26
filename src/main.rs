@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use std::thread::sleep;
 use std::ops::Sub;
 use std::thread;
+use std::sync::mpsc;
 
 struct Obstacle{
     x: usize,
@@ -95,10 +96,13 @@ fn draw(display: &[[Pixel; HEIGHT]; WIDTH]) {
 }
 
 fn main() {
-    let handle = thread::spawn(|| {
-        for i in 1..10 {
+    let (tx, rx) = mpsc::channel();
+
+    thread::spawn(move || {
+        for i in 1..30 {
             println!("hi number {} from the spawned thread!", i);
             thread::sleep(Duration::from_millis(1));
+            tx.send(String::from("hi")).unwrap();
         }
     });
 
@@ -132,6 +136,10 @@ fn main() {
         clear_terminal_and_reset_cursor();
 
         draw(&display);
+
+        if let Ok(res) = rx.try_recv() {
+            println!("{}", res);
+        };
 
         println!("This frame took {:#?}", now.elapsed());
         sleep(Duration::from_secs_f32(1f32 / (FPS as f32)).sub(now.elapsed()));
