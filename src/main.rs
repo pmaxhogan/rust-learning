@@ -1,3 +1,6 @@
+const WIDTH:usize = 10;
+const HEIGHT:usize = 5;
+
 // we need both Duration and Instant from std::time
 use std::time::{Duration, Instant};
 use std::thread::sleep;
@@ -16,7 +19,11 @@ fn clear_terminal_and_reset_cursor() {
     print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
 }
 
-fn draw(display: &[[Pixel; 5]; 5]) {
+fn physics(display: &mut [[Pixel; HEIGHT]; WIDTH]) {
+    display[3][1] = Pixel::Vertical;
+}
+
+fn draw(display: &[[Pixel; HEIGHT]; WIDTH]) {
     // we use y for the outer to allow us to do display[x][y] instead of display[y][x]
     for y in 0..display[0].len() {
         for x in 0..display.len() {
@@ -38,7 +45,7 @@ fn draw(display: &[[Pixel; 5]; 5]) {
 }
 
 fn main() {
-    let mut display = [[Pixel::Empty; 5]; 5];
+    let mut display = [[Pixel::Empty; HEIGHT]; WIDTH];
 
     display[0][1] = Pixel::Vertical;
 
@@ -52,6 +59,8 @@ fn main() {
     let program_start = Instant::now();
     for _ in 0..FPS {
         let now = Instant::now();
+
+        physics(&mut display);
 
         clear_terminal_and_reset_cursor();
 
