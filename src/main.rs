@@ -1,6 +1,8 @@
-const WIDTH:usize = 10;
-const HEIGHT:usize = 5;
+const WIDTH:usize = 100;
+const HEIGHT:usize = 50;
 const FPS:usize = 60;
+
+extern crate termion;
 
 // we need both Duration and Instant from std::time
 use std::time::{Duration, Instant};
@@ -8,6 +10,10 @@ use std::thread::sleep;
 use std::ops::Sub;
 use std::thread;
 use std::sync::mpsc;
+use std::io::{Write, stdin};
+use termion::event::Key;
+use termion::input::TermRead;
+use termion::raw::IntoRawMode;
 
 struct Obstacle{
     x: usize,
@@ -18,6 +24,7 @@ struct Obstacle{
 struct State {
     player: Player,
     obstacles: Vec<Obstacle>,
+    should_jump: bool,
 }
 
 struct Player {
@@ -56,12 +63,18 @@ fn physics(display: &mut [[Pixel; HEIGHT]; WIDTH], state: &mut State, tick: i32)
         }
     }
 
+    if state.should_jump && state.player.y_pos > 1 {
+        state.player.y_pos -= 2;
+        state.should_jump = false;
+    }
+
     if tick % 10 == 0{
         if state.player.y_pos + 1 < HEIGHT {
             state.player.y_pos += 1;
         }else{
-            panic!("Died!")
+            state.player.y_pos = 0;
         }
+
 
         for idx in 0..state.obstacles.len() {
             let obstacle = &mut state.obstacles[idx];
@@ -91,19 +104,40 @@ fn draw(display: &[[Pixel; HEIGHT]; WIDTH]) {
                 }
             }
         }
-        println!();
+        println!("\r");
     }
 }
 
 fn main() {
     let (tx, rx) = mpsc::channel();
+    let (exit_tx, exit_rx) = mpsc::channel();
 
-    thread::spawn(move || {
-        for i in 1..30 {
-            println!("hi number {} from the spawned thread!", i);
-            thread::sleep(Duration::from_millis(1));
-            tx.send(String::from("hi")).unwrap();
+    let handle = thread::spawn(move || {
+        let mut stdout = std::io::stdout().into_raw_mode().unwrap();
+        stdout.flush().unwrap();
+
+        write!(stdout, "{}", termion::cursor::Hide).unwrap();
+
+        for c in stdin().keys() {
+            match exit_rx.try_recv() {
+                Ok(val) => { break; },
+                Err(_) => {}
+            }
+
+
+            match c.unwrap() {
+                Key::Char(' ') => {
+                    tx.send(()).unwrap();
+                },
+                _ => { }
+            }
         }
+
+
+        stdout.flush().unwrap();
+
+        write!(stdout, "{}", termion::cursor::Show).unwrap();
+        stdout.suspend_raw_mode().unwrap();
     });
 
 
@@ -112,7 +146,8 @@ fn main() {
         player: Player {
             y_pos: 0
         },
-        obstacles: Vec::new()
+        obstacles: Vec::new(),
+        should_jump: false
     };
 
     for x in 0..display.len() {
@@ -128,8 +163,15 @@ fn main() {
     let program_start = Instant::now();
 
     let mut tick = 0;
-    for _ in 0..FPS {
+    for _ in 0..1000 {
         let now = Instant::now();
+
+        let should_jump: bool = match rx.try_recv() {
+            Ok(x) => { true }
+            _ => { false }
+        };
+
+        state.should_jump = should_jump;
 
         physics(&mut display, &mut state, tick);
 
@@ -137,16 +179,17 @@ fn main() {
 
         draw(&display);
 
-        if let Ok(res) = rx.try_recv() {
-            println!("{}", res);
-        };
 
-        println!("This frame took {:#?}", now.elapsed());
+        println!("\rThis frame took {:#?}", now.elapsed());
         sleep(Duration::from_secs_f32(1f32 / (FPS as f32)).sub(now.elapsed()));
-        println!("Total frame time: {:#?}", now.elapsed());
+        println!("\rTotal frame time: {:#?}", now.elapsed());
 
         tick += 1;
     }
 
-    println!("Extra time: {:#?}ms", (program_start.elapsed().as_secs_f64() - 1f64) * 1000f64);
+    println!("\rExtra time: {:#?}ms", (program_start.elapsed().as_secs_f64() - 1f64) * 1000f64);
+
+    println!("\r");
+    exit_tx.send(()).unwrap();
+    handle.join().unwrap();
 }
