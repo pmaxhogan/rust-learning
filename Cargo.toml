@@ -9,3 +9,4 @@ edition = "2018"
 [dependencies]
 uint = "0.8"
 termion = "1.5.5"
+rand = "0.7.3"

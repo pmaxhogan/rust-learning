@@ -14,7 +14,9 @@ use std::io::{Write, stdin};
 use termion::event::Key;
 use termion::input::TermRead;
 use termion::raw::IntoRawMode;
+use rand::Rng;
 
+#[derive(Debug)]
 struct Obstacle{
     x: usize,
     y: usize,
@@ -25,6 +27,7 @@ struct State {
     player: Player,
     obstacles: Vec<Obstacle>,
     should_jump: bool,
+    gap: usize
 }
 
 struct Player {
@@ -80,14 +83,11 @@ fn physics(display: &mut [[Pixel; HEIGHT]; WIDTH], state: &mut State, tick: i32)
             state.player.y_pos = 0;
         }
 
+        state.obstacles.retain(|obstacle| &obstacle.x > &0);
 
         for idx in 0..state.obstacles.len() {
             let obstacle = &mut state.obstacles[idx];
-            if obstacle.x < 1 {
-                state.obstacles.remove(idx);
-            } else {
-                obstacle.x -= 1;
-            }
+            obstacle.x -= 1;
         }
     }
 }
@@ -111,6 +111,20 @@ fn draw(display: &[[Pixel; HEIGHT]; WIDTH]) {
         }
         println!("\r");
     }
+}
+
+fn make_obstacle_pair(state:&State, x:usize) -> (Obstacle, Obstacle){
+    let split_height = rand::thread_rng().gen_range(0, HEIGHT - state.gap);
+    (Obstacle {
+        x,
+        y: 0,
+        height: split_height
+    },
+     Obstacle {
+         x,
+         y: split_height + state.gap,
+         height: HEIGHT - split_height - state.gap
+     })
 }
 
 fn main() {
@@ -153,18 +167,17 @@ fn main() {
             y_pos: 0
         },
         obstacles: Vec::new(),
-        should_jump: false
+        should_jump: false,
+        gap: 2
     };
 
     for x in 0..display.len() {
         display[x][display[0].len() - 1] = Pixel::Full;
     }
 
-    state.obstacles.push(Obstacle {
-        x: WIDTH / 2,
-        y: 0,
-        height: 20
-    });
+    let pair = make_obstacle_pair(&state, WIDTH / 2);
+    state.obstacles.push(pair.0);
+    state.obstacles.push(pair.1);
 
     let mut tick = 0;
     for _ in 0..1000 {
