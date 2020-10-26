@@ -29,6 +29,7 @@ struct State {
 
 struct Player {
     y_pos: usize,
+    x_pos: usize
 }
 
 // we need PartialEq to compare values
@@ -54,11 +55,15 @@ fn initialize_display(display: &mut [[Pixel; HEIGHT]; WIDTH]) {
 
 fn physics(display: &mut [[Pixel; HEIGHT]; WIDTH], state: &mut State, tick: i32) {
     initialize_display(display);
-    display[3][state.player.y_pos] = Pixel::Vertical;
+    display[state.player.x_pos][state.player.y_pos] = Pixel::Vertical;
     for obstacle in &state.obstacles{
         for y in obstacle.y..(obstacle.y + obstacle.height) {
             if obstacle.x < WIDTH && obstacle.y < HEIGHT {
                 display[obstacle.x][y] = Pixel::Full;
+
+                if state.player.x_pos == obstacle.x && state.player.y_pos == y {
+                    panic!("u died lol");
+                }
             }
         }
     }
@@ -144,6 +149,7 @@ fn main() {
     let mut display = [[Pixel::Empty; HEIGHT]; WIDTH];
     let mut state = State{
         player: Player {
+            x_pos: 3,
             y_pos: 0
         },
         obstacles: Vec::new(),
@@ -155,9 +161,9 @@ fn main() {
     }
 
     state.obstacles.push(Obstacle {
-        x: WIDTH,
+        x: WIDTH / 2,
         y: 0,
-        height: 2
+        height: 20
     });
 
     let mut tick = 0;
