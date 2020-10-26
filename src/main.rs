@@ -120,7 +120,7 @@ fn main() {
 
         for c in stdin().keys() {
             match exit_rx.try_recv() {
-                Ok(val) => { break; },
+                Ok(_) => { break; },
                 Err(_) => {}
             }
 
@@ -160,14 +160,12 @@ fn main() {
         height: 2
     });
 
-    let program_start = Instant::now();
-
     let mut tick = 0;
     for _ in 0..1000 {
         let now = Instant::now();
 
         let should_jump: bool = match rx.try_recv() {
-            Ok(x) => { true }
+            Ok(_) => { true }
             _ => { false }
         };
 
@@ -186,8 +184,6 @@ fn main() {
 
         tick += 1;
     }
-
-    println!("\rExtra time: {:#?}ms", (program_start.elapsed().as_secs_f64() - 1f64) * 1000f64);
 
     println!("\r");
     exit_tx.send(()).unwrap();
