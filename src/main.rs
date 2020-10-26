@@ -3,27 +3,49 @@ use std::time::{Duration, Instant};
 use std::thread::sleep;
 use std::ops::Sub;
 
-#[derive(PartialEq)]
+// we need PartialEq to compare values
+// Copy and Clone to be able to use the stack for storage (faster)
+#[derive(PartialEq,Copy,Clone)]
 enum Pixel{
     Empty,
-    Vertical
+    Vertical,
+    Full
 }
 
 fn clear_terminal_and_reset_cursor() {
     print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
 }
 
-fn main() {
-    // we can't do [[Pixel::Empty; 70]; 70] because of https://github.com/rust-lang/rust/issues/49147
-    // ;(
-    // so we gotta make a Vector :)
-    let mut display: Vec<Vec<Pixel>> = Vec::new();
-    for y in 0..4 {
-        display.push(Vec::new());
-        for x in 0..10 {
-            display[y].push(if y == 0 {Pixel::Vertical} else {Pixel::Empty});
+fn draw(display: &[[Pixel; 5]; 5]) {
+    // we use y for the outer to allow us to do display[x][y] instead of display[y][x]
+    for y in 0..display[0].len() {
+        for x in 0..display.len() {
+            let elem = display[x][y];
+            match elem{
+                Pixel::Empty => {
+                    print!(" ");
+                }
+                Pixel::Vertical => {
+                    print!("|");
+                }
+                Pixel::Full => {
+                    print!("#");
+                }
+            }
         }
+        println!();
     }
+}
+
+fn main() {
+    let mut display = [[Pixel::Empty; 5]; 5];
+
+    display[0][1] = Pixel::Vertical;
+
+    for x in 0..display.len() {
+        display[x][display[0].len() - 1] = Pixel::Full;
+    }
+
 
     let FPS = 60;
 
@@ -33,24 +55,7 @@ fn main() {
 
         clear_terminal_and_reset_cursor();
 
-        println!("hi {}", display[0][1] == Pixel::Vertical);
-
-        for row in display.iter() {
-            for elem in row.iter() {
-                println!();
-                match elem{
-                    Pixel::Empty => {
-                        print!(" ");
-                    }
-                    Pixel::Vertical => {
-                        print!("|");
-                    }
-                }
-            }
-        }
-
-        // add some delay
-        sleep(Duration::from_millis(3));
+        draw(&display);
 
         println!("This frame took {:#?}", now.elapsed());
         sleep(Duration::from_secs_f32(1f32 / (FPS as f32)).sub(now.elapsed()));
