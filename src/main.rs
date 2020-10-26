@@ -1,5 +1,6 @@
 const WIDTH:usize = 100;
 const HEIGHT:usize = 50;
+const INITIAL_SPACING:usize = 60;
 const FPS:usize = 60;
 
 extern crate termion;
@@ -16,6 +17,12 @@ use termion::input::TermRead;
 use termion::raw::IntoRawMode;
 use rand::Rng;
 
+#[derive(PartialEq,Copy,Clone)]
+enum KeyEvent{
+    Jump,
+    Quit
+}
+
 #[derive(Debug)]
 struct Obstacle{
     x: usize,
@@ -27,7 +34,9 @@ struct State {
     player: Player,
     obstacles: Vec<Obstacle>,
     should_jump: bool,
-    gap: usize
+    gap: usize,
+    spacing: usize,
+    dead: bool
 }
 
 struct Player {
@@ -56,7 +65,7 @@ fn initialize_display(display: &mut [[Pixel; HEIGHT]; WIDTH]) {
     }
 }
 
-fn physics(display: &mut [[Pixel; HEIGHT]; WIDTH], state: &mut State, tick: i32) {
+fn physics(display: &mut [[Pixel; HEIGHT]; WIDTH], mut state: &mut State, tick: i32) {
     initialize_display(display);
     display[state.player.x_pos][state.player.y_pos] = Pixel::Vertical;
     for obstacle in &state.obstacles{
@@ -65,7 +74,8 @@ fn physics(display: &mut [[Pixel; HEIGHT]; WIDTH], state: &mut State, tick: i32)
                 display[obstacle.x][y] = Pixel::Full;
 
                 if state.player.x_pos == obstacle.x && state.player.y_pos == y {
-                    panic!("u died lol");
+                    state.dead = true;
+                    return;
                 }
             }
         }
@@ -79,15 +89,20 @@ fn physics(display: &mut [[Pixel; HEIGHT]; WIDTH], state: &mut State, tick: i32)
     if tick % 10 == 0{
         if state.player.y_pos + 1 < HEIGHT {
             state.player.y_pos += 1;
-        }else{
-            state.player.y_pos = 0;
         }
 
         state.obstacles.retain(|obstacle| &obstacle.x > &0);
 
+        let mut highest_x = 0;
         for idx in 0..state.obstacles.len() {
             let obstacle = &mut state.obstacles[idx];
             obstacle.x -= 1;
+            highest_x = highest_x.max(obstacle.x);
+        }
+
+        // if the furthest obstacle is far enough away from the right edge, make a new one
+        if WIDTH - highest_x >= state.spacing {
+            add_obstacle_pair(&mut state, WIDTH - 1);
         }
     }
 }
@@ -127,6 +142,13 @@ fn make_obstacle_pair(state:&State, x:usize) -> (Obstacle, Obstacle){
      })
 }
 
+fn add_obstacle_pair(state: &mut State, x:usize){
+    let pair = make_obstacle_pair(&state, x);
+    state.obstacles.push(pair.0);
+    state.obstacles.push(pair.1);
+    println!("{}", x);
+}
+
 fn main() {
     let (tx, rx) = mpsc::channel();
     let (exit_tx, exit_rx) = mpsc::channel();
@@ -146,7 +168,10 @@ fn main() {
 
             match c.unwrap() {
                 Key::Char(' ') => {
-                    tx.send(()).unwrap();
+                    tx.send(KeyEvent::Jump).unwrap();
+                },
+                Key::Char('q') => {
+                    tx.send(KeyEvent::Quit).unwrap();
                 },
                 _ => { }
             }
@@ -168,31 +193,44 @@ fn main() {
         },
         obstacles: Vec::new(),
         should_jump: false,
-        gap: 2
+        gap: 3,
+        spacing: 40,
+        dead: false
     };
 
     for x in 0..display.len() {
         display[x][display[0].len() - 1] = Pixel::Full;
     }
 
-    let pair = make_obstacle_pair(&state, WIDTH / 2);
-    state.obstacles.push(pair.0);
-    state.obstacles.push(pair.1);
+    let num_obstacles = (((WIDTH - INITIAL_SPACING) as f32) / (state.spacing as f32)).floor() as usize;
+    println!("obstacles:{}", num_obstacles);
+    for x in 0..num_obstacles{
+        // we need to pull this var out because state is mutably borrowed below
+        let spacing = state.spacing;
+        add_obstacle_pair(&mut state, x * spacing + INITIAL_SPACING);
+    }
 
     let mut tick = 0;
-    for _ in 0..1000 {
+    loop {
         let now = Instant::now();
 
-        let should_jump: bool = match rx.try_recv() {
-            Ok(_) => { true }
-            _ => { false }
+        match rx.try_recv() {
+            Ok(event) => {
+                match event{
+                    KeyEvent::Jump => {
+                        state.should_jump = true;
+                    },
+                    KeyEvent::Quit => {
+                        break;
+                    }
+                };
+            }
+            _ => {}
         };
 
-        state.should_jump = should_jump;
+        clear_terminal_and_reset_cursor();
 
         physics(&mut display, &mut state, tick);
-
-        clear_terminal_and_reset_cursor();
 
         draw(&display);
 
@@ -204,7 +242,7 @@ fn main() {
         tick += 1;
     }
 
-    println!("\r");
+    println!("\rPress any key to continue to your terminal.\r");
     exit_tx.send(()).unwrap();
     handle.join().unwrap();
 }
