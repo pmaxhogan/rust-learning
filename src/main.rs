@@ -1,6 +1,7 @@
 const WIDTH:usize = 100;
 const HEIGHT:usize = 50;
-const INITIAL_SPACING:usize = 60;
+const ANIMATION_SPEED:usize = 40;
+const INITIAL_SPACING:usize = 40;
 const FPS:usize = 60;
 
 extern crate termion;
@@ -30,6 +31,13 @@ struct Obstacle{
     height: usize,
 }
 
+#[derive(PartialEq,Copy,Clone)]
+enum GameState{
+    Playing,
+    DeathAnimation,
+    Death
+}
+
 struct State {
     player: Player,
     obstacles: Vec<Obstacle>,
@@ -37,7 +45,7 @@ struct State {
     jump_size: usize,
     gap: usize,
     spacing: usize,
-    dead: bool,
+    game_state: GameState,
     dead_timer: usize,
 }
 
@@ -52,7 +60,8 @@ struct Player {
 enum Pixel{
     Empty,
     Vertical,
-    Full
+    Full,
+    Char(char),
 }
 
 // creates a "spiral" vector with a provided width and height
@@ -83,7 +92,7 @@ fn gen_spiral_vector_with_offset(x_offset: usize, y_offset: usize, width: usize,
     }
 
     if width > 2 && height > 2 {
-        v.append(&mut gen_spiral_vector_with_offset(1, 1, width - 2, height - 2));
+        v.append(&mut gen_spiral_vector_with_offset(1 + x_offset, 1 + y_offset, width - 2, height - 2));
     }
 
     v
@@ -112,14 +121,18 @@ fn draw_display(display: &mut [[Pixel; HEIGHT]; WIDTH], mut state: &mut State){
         }
     }
 
-    if state.dead && state.dead_timer < WIDTH * HEIGHT {
-        let vec = &gen_spiral_vector(WIDTH, HEIGHT)[0..state.dead_timer];
+    if state.game_state == GameState::DeathAnimation && state.dead_timer < WIDTH * HEIGHT {
+        state.dead_timer += ANIMATION_SPEED;
+
+        let vec = &gen_spiral_vector(WIDTH, HEIGHT)[0..state.dead_timer.min(WIDTH * HEIGHT)];
 
         for (x, y) in vec{
             display[*x][*y] = Pixel::Full;
         }
 
-        state.dead_timer += 1;
+        if state.dead_timer >= WIDTH * HEIGHT{
+            state.game_state = GameState::Death;
+        }
     }
 }
 
@@ -128,7 +141,7 @@ fn physics(display: &mut [[Pixel; HEIGHT]; WIDTH], mut state: &mut State, tick: 
     for obstacle in &state.obstacles{
         for y in obstacle.y..(obstacle.y + obstacle.height) {
             if state.player.x_pos == obstacle.x && state.player.y_pos == y {
-                state.dead = true;
+                state.game_state = GameState::DeathAnimation;
                 return;
             }
         }
@@ -156,7 +169,7 @@ fn physics(display: &mut [[Pixel; HEIGHT]; WIDTH], mut state: &mut State, tick: 
         }
 
         // if the furthest obstacle is far enough away from the right edge, make a new one
-        if WIDTH - highest_x >= state.spacing {
+        if WIDTH > highest_x && WIDTH - highest_x >= state.spacing {
             add_obstacle_pair(&mut state, WIDTH - 1);
         }
     }
@@ -176,6 +189,9 @@ fn render_display(display: &[[Pixel; HEIGHT]; WIDTH]) {
                 }
                 Pixel::Full => {
                     print!("#");
+                }
+                Pixel::Char(c) => {
+                    print!("{}", c);
                 }
             }
         }
@@ -249,8 +265,8 @@ fn main() {
         jump_left: 0,
         jump_size: 2,
         gap: 3,
-        spacing: 40,
-        dead: false,
+        spacing: 25,
+        game_state: GameState::Playing,
         dead_timer: 0
     };
 
@@ -258,8 +274,7 @@ fn main() {
         display[x][display[0].len() - 1] = Pixel::Full;
     }
 
-    let num_obstacles = (((WIDTH - INITIAL_SPACING) as f32) / (state.spacing as f32)).floor() as usize;
-    println!("obstacles:{}", num_obstacles);
+    let num_obstacles = (WIDTH as f32 / state.spacing as f32).floor() as usize;
     for x in 0..num_obstacles{
         // we need to pull this var out because state is mutably borrowed below
         let spacing = state.spacing;
@@ -288,16 +303,30 @@ fn main() {
 
         draw_display(&mut display, &mut state);
 
-        if !state.dead {
-            physics(&mut display, &mut state, tick);
+        match state.game_state {
+            GameState::Playing => {
+                physics(&mut display, &mut state, tick);
+            }
+            GameState::Death => {
+                display.iter_mut().for_each(|row| row.iter_mut().for_each(|pixel| *pixel = Pixel::Full));
+
+                let message = "You Suck.";
+
+                let start_x = ((WIDTH - message.len()) as f32 / 2 as f32).floor() as usize;
+                let total = message.len();
+                for x in 0..total{
+                    display[x + start_x][HEIGHT / 2] = Pixel::Char(message.chars().collect::<Vec<char>>()[x]);
+                }
+            }
+            _ => {}
         }
 
         render_display(&display);
 
 
-        println!("\rThis frame took {:#?}", now.elapsed());
+        // println!("\rThis frame took {:#?}", now.elapsed());
         sleep(Duration::from_secs_f32(1f32 / (FPS as f32)).sub(now.elapsed()));
-        println!("\rTotal frame time: {:#?}", now.elapsed());
+        // println!("\rTotal frame time: {:#?}", now.elapsed());
 
         tick += 1;
     }
