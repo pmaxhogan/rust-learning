@@ -33,7 +33,8 @@ struct Obstacle{
 struct State {
     player: Player,
     obstacles: Vec<Obstacle>,
-    should_jump: bool,
+    jump_left: usize,
+    jump_size: usize,
     gap: usize,
     spacing: usize,
     dead: bool
@@ -65,29 +66,42 @@ fn initialize_display(display: &mut [[Pixel; HEIGHT]; WIDTH]) {
     }
 }
 
-fn physics(display: &mut [[Pixel; HEIGHT]; WIDTH], mut state: &mut State, tick: i32) {
+fn draw_display(display: &mut [[Pixel; HEIGHT]; WIDTH], mut state: &mut State){
     initialize_display(display);
     display[state.player.x_pos][state.player.y_pos] = Pixel::Vertical;
     for obstacle in &state.obstacles{
         for y in obstacle.y..(obstacle.y + obstacle.height) {
             if obstacle.x < WIDTH && obstacle.y < HEIGHT {
                 display[obstacle.x][y] = Pixel::Full;
-
-                if state.player.x_pos == obstacle.x && state.player.y_pos == y {
-                    state.dead = true;
-                    return;
-                }
             }
         }
     }
 
-    if state.should_jump && state.player.y_pos > 1 {
-        state.player.y_pos -= 2;
-        state.should_jump = false;
+    if state.dead{
+
+    }
+}
+
+fn physics(display: &mut [[Pixel; HEIGHT]; WIDTH], mut state: &mut State, tick: i32) {
+    display[state.player.x_pos][state.player.y_pos] = Pixel::Vertical;
+    for obstacle in &state.obstacles{
+        for y in obstacle.y..(obstacle.y + obstacle.height) {
+            if state.player.x_pos == obstacle.x && state.player.y_pos == y {
+                state.dead = true;
+                return;
+            }
+        }
+    }
+
+    if state.jump_left > 0 {
+        if state.player.y_pos > 0 {
+            state.player.y_pos -= 1;
+        }
+        state.jump_left -= 1;
     }
 
     if tick % 10 == 0{
-        if state.player.y_pos + 1 < HEIGHT {
+        if state.player.y_pos + 1 < HEIGHT && state.jump_left == 0 {
             state.player.y_pos += 1;
         }
 
@@ -107,7 +121,7 @@ fn physics(display: &mut [[Pixel; HEIGHT]; WIDTH], mut state: &mut State, tick: 
     }
 }
 
-fn draw(display: &[[Pixel; HEIGHT]; WIDTH]) {
+fn render_display(display: &[[Pixel; HEIGHT]; WIDTH]) {
     // we use y for the outer to allow us to do display[x][y] instead of display[y][x]
     for y in 0..display[0].len() {
         for x in 0..display.len() {
@@ -146,7 +160,6 @@ fn add_obstacle_pair(state: &mut State, x:usize){
     let pair = make_obstacle_pair(&state, x);
     state.obstacles.push(pair.0);
     state.obstacles.push(pair.1);
-    println!("{}", x);
 }
 
 fn main() {
@@ -192,7 +205,8 @@ fn main() {
             y_pos: 0
         },
         obstacles: Vec::new(),
-        should_jump: false,
+        jump_left: 0,
+        jump_size: 2,
         gap: 3,
         spacing: 40,
         dead: false
@@ -218,7 +232,7 @@ fn main() {
             Ok(event) => {
                 match event{
                     KeyEvent::Jump => {
-                        state.should_jump = true;
+                        state.jump_left = state.jump_size;
                     },
                     KeyEvent::Quit => {
                         break;
@@ -230,9 +244,13 @@ fn main() {
 
         clear_terminal_and_reset_cursor();
 
-        physics(&mut display, &mut state, tick);
+        draw_display(&mut display, &mut state);
 
-        draw(&display);
+        if !state.dead {
+            physics(&mut display, &mut state, tick);
+        }
+
+        render_display(&display);
 
 
         println!("\rThis frame took {:#?}", now.elapsed());
