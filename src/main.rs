@@ -38,7 +38,7 @@ struct State {
     gap: usize,
     spacing: usize,
     dead: bool,
-    // dead_timer: usize
+    dead_timer: usize,
 }
 
 struct Player {
@@ -54,8 +54,6 @@ enum Pixel{
     Vertical,
     Full
 }
-
-
 
 // creates a "spiral" vector with a provided width and height
 // returns a vector containing coordinate positions for a spiral that begins in the upper-left
@@ -114,8 +112,14 @@ fn draw_display(display: &mut [[Pixel; HEIGHT]; WIDTH], mut state: &mut State){
         }
     }
 
-    if state.dead{
+    if state.dead && state.dead_timer < WIDTH * HEIGHT {
+        let vec = &gen_spiral_vector(WIDTH, HEIGHT)[0..state.dead_timer];
 
+        for (x, y) in vec{
+            display[*x][*y] = Pixel::Full;
+        }
+
+        state.dead_timer += 1;
     }
 }
 
@@ -246,7 +250,8 @@ fn main() {
         jump_size: 2,
         gap: 3,
         spacing: 40,
-        dead: false
+        dead: false,
+        dead_timer: 0
     };
 
     for x in 0..display.len() {
