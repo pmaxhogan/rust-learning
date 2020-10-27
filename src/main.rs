@@ -37,7 +37,8 @@ struct State {
     jump_size: usize,
     gap: usize,
     spacing: usize,
-    dead: bool
+    dead: bool,
+    // dead_timer: usize
 }
 
 struct Player {
@@ -52,6 +53,42 @@ enum Pixel{
     Empty,
     Vertical,
     Full
+}
+
+
+
+// creates a "spiral" vector with a provided width and height
+// returns a vector containing coordinate positions for a spiral that begins in the upper-left
+// corner, and goes counterclockwise until the center
+fn gen_spiral_vector(width: usize, height: usize) -> Vec<(usize, usize)> {
+    gen_spiral_vector_with_offset(0, 0, width, height)
+}
+fn gen_spiral_vector_with_offset(x_offset: usize, y_offset: usize, width: usize, height: usize) -> Vec<(usize, usize)> {
+    let mut v: Vec<(usize, usize)> = Vec::new();
+
+    for y in 0..height {
+        v.push((x_offset, y + y_offset));
+    }
+
+    if width > 1 {
+        for x in 1..width {
+            v.push((x + x_offset, height - 1 + y_offset));
+        }
+        for y in (0..(height - 1)).rev() {
+            v.push((width - 1 + x_offset, y + y_offset));
+        }
+        if height > 1 {
+            for x in (1..(width - 1)).rev() {
+                v.push((x + x_offset, y_offset));
+            }
+        }
+    }
+
+    if width > 2 && height > 2 {
+        v.append(&mut gen_spiral_vector_with_offset(1, 1, width - 2, height - 2));
+    }
+
+    v
 }
 
 fn clear_terminal_and_reset_cursor() {
@@ -160,40 +197,6 @@ fn add_obstacle_pair(state: &mut State, x:usize){
     let pair = make_obstacle_pair(&state, x);
     state.obstacles.push(pair.0);
     state.obstacles.push(pair.1);
-}
-
-// creates a "spiral" vector with a provided width and height
-// returns a vector containing coordinate positions for a spiral that begins in the upper-left
-// corner, and goes counterclockwise until the center
-fn gen_spiral_vector(width: usize, height: usize) -> Vec<(usize, usize)> {
-    gen_spiral_vector_with_offset(0, 0, width, height)
-}
-fn gen_spiral_vector_with_offset(x_offset: usize, y_offset: usize, width: usize, height: usize) -> Vec<(usize, usize)> {
-    let mut v: Vec<(usize, usize)> = Vec::new();
-
-    for y in 0..height {
-        v.push((x_offset, y + y_offset));
-    }
-
-    if width > 1 {
-        for x in 1..width {
-            v.push((x + x_offset, height - 1 + y_offset));
-        }
-        for y in (0..(height - 1)).rev() {
-            v.push((width - 1 + x_offset, y + y_offset));
-        }
-        if height > 1 {
-            for x in (1..(width - 1)).rev() {
-                v.push((x + x_offset, y_offset));
-            }
-        }
-    }
-
-    if width > 2 && height > 2 {
-        v.append(&mut gen_spiral_vector_with_offset(1, 1, width - 2, height - 2));
-    }
-
-    v
 }
 
 fn main() {
