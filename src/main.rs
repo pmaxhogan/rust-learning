@@ -190,6 +190,10 @@ fn physics(mut state: &mut State, tick: i32) {
                 state.player.y_pos -= 1;
             }
             state.player.jump_left -= 1;
+
+            if state.player.jump_left == 1{
+                state.score += 1;
+            }
         }
     }
 
