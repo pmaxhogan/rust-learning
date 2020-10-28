@@ -65,6 +65,7 @@ enum Pixel {
     Empty,
     Vertical,
     Full,
+    FullAlt,
     Char(char),
 }
 
@@ -154,7 +155,7 @@ fn draw_display(display: &mut [[Pixel; HEIGHT]; WIDTH], mut state: &mut State) {
             // ...write it to the display
             // note: *x and *y are used because the iterator of the vector gives us a reference, not the value
             // we need to dereference this because we need the number, so we use the * operator
-            display[*x][*y] = Pixel::Full;
+            display[*x][*y] = Pixel::FullAlt;
         }
 
         // if our death timer is higher than the number of "pixel"s in the display, go to the death state
@@ -239,12 +240,15 @@ fn render_display(display: &[[Pixel; HEIGHT]; WIDTH]) {
                 Pixel::Full => {
                     print!("#");
                 }
+                Pixel::FullAlt => {
+                    print!("@");
+                }
                 Pixel::Char(c) => {
                     print!("{}", c);
                 }
             }
         }
-        println!("#\r");
+        println!("@\r");
     }
 
     println!("{}", "@".repeat(WIDTH + 2) + "\r");
@@ -300,7 +304,7 @@ fn setup() -> ([[Pixel; 50]; 100], State, i32) {
         add_obstacle_pair(&mut state, x * spacing + INITIAL_SPACING);
     }
 
-    let mut tick = 0;
+    let tick = 0;
 
     (display, state, tick)
 }
