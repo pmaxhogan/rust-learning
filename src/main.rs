@@ -351,6 +351,7 @@ fn setup() -> ([[Pixel; 50]; 100], State) {
     (display, state)
 }
 
+//noinspection RsRedundantElse,RsRedundantElse
 fn main() {
     // the send and receiver for messages between our main (game) thread and our key thread
     let (tx, rx) = mpsc::channel();
@@ -446,20 +447,6 @@ fn main() {
                     // replace the old ones with new ones
                     display = display2;
                     state = state2;
-                } else {
-                    // display death message in the middle of the screen
-                    display.iter_mut().for_each(|row| row.iter_mut().for_each(|pixel| *pixel = Pixel::Full));
-
-                    let death_message = "You Died.";
-
-                    // where the you died message starts
-                    // (the difference of the width and message length, over 2)
-                    let start_x = ((WIDTH - death_message.len()) as f32 / 2 as f32).floor() as usize;
-                    let total = death_message.len();
-                    for x in 0..total {
-                        // write the death message to the display
-                        display[x + start_x][HEIGHT / 2] = Pixel::Char(death_message.chars().collect::<Vec<char>>()[x]);
-                    }
                 }
             }
             _ => {}
