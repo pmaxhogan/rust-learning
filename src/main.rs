@@ -82,9 +82,6 @@ enum Pixel {
     Vertical,
     Full,
     FullAlt,// alternate "full" character
-
-    // or a custom character
-    Char(char),
 }
 
 // creates a "spiral" vector with a provided width and height
@@ -283,9 +280,6 @@ fn render_display(display: &[[Pixel; HEIGHT]; WIDTH]) {
                 }
                 Pixel::FullAlt => {
                     print!("@");
-                }
-                Pixel::Char(c) => {
-                    print!("{}", c);
                 }
             }
         }
