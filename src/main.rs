@@ -456,8 +456,11 @@ fn main() {
         // this means that no matter how long the game loop took, the game won't update slower or faster
         // as long as it finishes before when the next game loop should run
         // if it doesn't, then i need to optimize my game or your computer is too slow
-        sleep(Duration::from_secs_f32(1f32 / (FPS as f32)).checked_sub(now.elapsed())
-            .expect("The game loop took too long to run. Consider purchasing a more powerful gaming computer."));
+        let time = Duration::from_secs_f32(1f32 / (FPS as f32)).checked_sub(now.elapsed());
+        match time {
+            Some(duration) => { sleep(duration); }
+            None => {}
+        }
 
         tick += 1;
     }
