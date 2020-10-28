@@ -1,6 +1,6 @@
 const WIDTH:usize = 100;
 const HEIGHT:usize = 50;
-const ANIMATION_SPEED:usize = 40;
+const ANIMATION_SPEED:usize = 90;
 const INITIAL_SPACING:usize = 40;
 const FPS:usize = 60;
 
@@ -41,7 +41,6 @@ enum GameState{
 struct State {
     player: Player,
     obstacles: Vec<Obstacle>,
-    jump_left: usize,
     jump_size: usize,
     gap: usize,
     spacing: usize,
@@ -51,7 +50,9 @@ struct State {
 
 struct Player {
     y_pos: usize,
-    x_pos: usize
+    x_pos: usize,
+    jump_left: usize,
+    fall_speed: f32
 }
 
 // we need PartialEq to compare values
@@ -147,16 +148,23 @@ fn physics(display: &mut [[Pixel; HEIGHT]; WIDTH], mut state: &mut State, tick: 
         }
     }
 
-    if state.jump_left > 0 {
-        if state.player.y_pos > 0 {
-            state.player.y_pos -= 1;
+    if tick % 2 == 0 {
+        if state.player.jump_left > 0 {
+            if state.player.y_pos > 0 {
+                state.player.y_pos -= 1;
+            }
+            state.player.jump_left -= 1;
         }
-        state.jump_left -= 1;
     }
 
     if tick % 10 == 0{
-        if state.player.y_pos + 1 < HEIGHT && state.jump_left == 0 {
-            state.player.y_pos += 1;
+        let fall_height = state.player.fall_speed.round() as usize;
+        if state.player.y_pos + 1 < HEIGHT && state.player.jump_left == 0 {
+            // ensure that we don't go further than the bottom
+            state.player.y_pos = (state.player.y_pos + fall_height).min(HEIGHT - 1);
+
+            // accelerate falling
+            state.player.fall_speed += 0.3;
         }
 
         state.obstacles.retain(|obstacle| &obstacle.x > &0);
@@ -259,11 +267,12 @@ fn main() {
     let mut state = State{
         player: Player {
             x_pos: 3,
-            y_pos: 0
+            y_pos: 0,
+            jump_left: 0,
+            fall_speed: 1f32
         },
         obstacles: Vec::new(),
-        jump_left: 0,
-        jump_size: 2,
+        jump_size: 3,
         gap: 3,
         spacing: 25,
         game_state: GameState::Playing,
@@ -289,7 +298,8 @@ fn main() {
             Ok(event) => {
                 match event{
                     KeyEvent::Jump => {
-                        state.jump_left = state.jump_size;
+                        state.player.jump_left = state.jump_size;
+                        state.player.fall_speed = 1f32;
                     },
                     KeyEvent::Quit => {
                         break;
@@ -310,7 +320,7 @@ fn main() {
             GameState::Death => {
                 display.iter_mut().for_each(|row| row.iter_mut().for_each(|pixel| *pixel = Pixel::Full));
 
-                let message = "You Suck.";
+                let message = "You Died.";
 
                 let start_x = ((WIDTH - message.len()) as f32 / 2 as f32).floor() as usize;
                 let total = message.len();
