@@ -190,10 +190,6 @@ fn physics(mut state: &mut State, tick: i32) {
                 state.player.y_pos -= 1;
             }
             state.player.jump_left -= 1;
-
-            if state.player.jump_left == 1{
-                state.score += 1;
-            }
         }
     }
 
@@ -224,8 +220,11 @@ fn physics(mut state: &mut State, tick: i32) {
 }
 
 fn render_display(display: &[[Pixel; HEIGHT]; WIDTH]) {
+    println!("{}", "@".repeat(WIDTH + 2) + "\r");
+
     // we use y for the outer to allow us to do display[x][y] instead of display[y][x]
     for y in 0..display[0].len() {
+        print!("@");
         for x in 0..display.len() {
             let elem = display[x][y];
             match elem{
@@ -243,8 +242,10 @@ fn render_display(display: &[[Pixel; HEIGHT]; WIDTH]) {
                 }
             }
         }
-        println!("\r");
+        println!("#\r");
     }
+
+    println!("{}", "@".repeat(WIDTH + 2) + "\r");
 }
 
 fn make_obstacle_pair(state:&State, x:usize) -> (Obstacle, Obstacle){
