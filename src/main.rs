@@ -15,11 +15,17 @@ use termion::input::TermRead;
 use termion::raw::IntoRawMode;
 
 // constant variables (inlined by the compiler)
-const WIDTH: usize = 100;// the width of the "screen" in terminal characters
-const HEIGHT: usize = 50;// the height of the "screen" in terminal characters
-const ANIMATION_SPEED: usize = 90;// how fast the death animation is
-const INITIAL_SPACING: usize = 50;// how far away the first obstacle is
-const FPS: usize = 60;// screen (and physics!) updates per second
+
+// the width of the "screen" in terminal characters
+const WIDTH: usize = 100;
+// the height of the "screen" in terminal characters
+const HEIGHT: usize = 50;
+// how fast the death animation is
+const ANIMATION_SPEED: usize = 90;
+// how far away the first obstacle is
+const INITIAL_SPACING: usize = 50;
+// screen (and physics!) updates per second
+const FPS: usize = 60;
 const AUTO_RESPAWN: bool = true;// respawn after death animation
 
 // keyboard events
@@ -47,18 +53,23 @@ enum GameState {
 struct State {
     player: Player,
     obstacles: Vec<Obstacle>,
-    jump_size: usize,// how high a jump is
-    gap: usize,// vertical gap between obstacles
-    spacing: usize,// horizontal spacing between obstacles
+    // how high a jump is
+    jump_size: usize,
+    // vertical gap between obstacles
+    gap: usize,
+    // horizontal spacing between obstacles
+    spacing: usize,
     game_state: GameState,
-    dead_timer: usize,// death animation timer
+    // death animation timer
+    dead_timer: usize,
     score: usize,
 }
 
 struct Player {
     y_pos: usize,
     x_pos: usize,
-    jump_left: usize,// how much jump is left
+    // how much jump is left
+    jump_left: usize,
     fall_speed: f32,// how fast the player is falling
 }
 
@@ -360,7 +371,7 @@ fn main() {
             match c.expect("Expected to have a key?? idk") {
                 Key::Char(' ') => {// pressed space
                     tx.send(KeyEvent::Jump).unwrap();
-                },
+                }
                 Key::Char('q') => {// pressed q
                     // tells the main thread to quit
                     // note: this is not read immediately, rather the main thread reads it when it
@@ -369,7 +380,7 @@ fn main() {
 
                     // exit this loop (and thus the main thread)
                     break;
-                },
+                }
                 _ => {}// all other keys are irrelevant
             }
         }
@@ -405,7 +416,7 @@ fn main() {
                             // ...skip it
                             state.game_state = GameState::Death;
                         }
-                    },
+                    }
                     KeyEvent::Quit => {// quit key
                         // exit the loop
                         break;
