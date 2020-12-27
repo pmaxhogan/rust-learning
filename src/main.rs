@@ -522,22 +522,31 @@ const PLAYER_WIDTH: u32 = 50;
 const PLAYER_HEIGHT: u32 = 50;
 const GRAVITY: f32 = 0.98;
 
-fn physics(state : &mut State, elapsed : u128){
-    if elapsed > u32::max_value() as u128 {
-        panic!("Physics not called frequently enough!");
+fn physics(state : &mut State){
+    let mut delta_x = 1f32;
+
+    for allowed_delta_x in 0i32..(delta_x.round() as i32) {
+        for block in &state.blocks {
+            if state.player.x + (allowed_delta_x as f32) <= block.x + block.width && state.player.x + PLAYER_WIDTH as f32 + (allowed_delta_x as f32) >= block.x && state.player.y <= block.y + block.height && state.player.y + PLAYER_HEIGHT as f32 >= block.y as f32{
+                if allowed_delta_x == 0{
+                    delta_x = 0.;
+                }else {
+                    delta_x = delta_x.min((allowed_delta_x - 1) as f32);
+                }
+                break;
+            }
+        }
     }
-    let elapsed = elapsed as f32;
 
-    thread::sleep(Duration::from_millis(10));
+    state.player.x += delta_x;
 
-    println!("elapsed: {}", elapsed);
-
-    let mut delta_y = elapsed * GRAVITY;
+    let mut delta_y = GRAVITY;
 
     for allowed_delta_y in 0i32..(delta_y.round() as i32) {
         for block in &state.blocks {
-            if state.player.x < block.x + block.width && state.player.x + PLAYER_WIDTH as f32 > block.x && state.player.y < block.y + allowed_delta_y as f32 + block.height && state.player.y + PLAYER_HEIGHT as f32 > block.y + allowed_delta_y as f32{
+            if state.player.x <= block.x + block.width && state.player.x + PLAYER_WIDTH as f32 >= block.x && state.player.y + (allowed_delta_y as f32) <= block.y + block.height && state.player.y + PLAYER_HEIGHT as f32 + allowed_delta_y as f32 >= block.y{
                 if allowed_delta_y == 0{
+                    println!("can't move y!");
                     delta_y = 0.;
                 }else {
                     delta_y = delta_y.min((allowed_delta_y - 1) as f32);
@@ -578,8 +587,6 @@ fn main() {
     window.set_vertical_sync_enabled(true);
     window.set_mouse_cursor_visible(false);
 
-    let mut now = SystemTime::now();
-
     'draw_loop:
     loop {
         while let Some(event) = window.poll_event() {
@@ -591,16 +598,8 @@ fn main() {
                 _ => {}
             }
         }
-        match now.elapsed(){
-            Ok(elapsed) => {
-                physics(&mut state, elapsed.as_millis());
-                now = SystemTime::now();
-            },
-            Err(e) => {
-                panic!("system time change! {:?}", e);
-            }
-        }
 
+        physics(&mut state);
 
         window.clear(Color::BLACK);
 
