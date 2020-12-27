@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/rust-learning.iml" filepath="$PROJECT_DIR$/.idea/rust-learning.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../rust-sfml/.idea/rust-sfml.iml" filepath="$PROJECT_DIR$/../rust-sfml/.idea/rust-sfml.iml" />
     </modules>
   </component>
 </project>
