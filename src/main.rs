@@ -3,25 +3,6 @@ use sfml::{
     window::{Event, Key, Style},
 };
 use sfml::graphics::{RectangleShape, Transformable, Text, Font};
-
-// #[derive(Clone, Copy)]
-// pub struct TriangleShape;
-//
-// impl CustomShapePoints for TriangleShape {
-//     fn point_count(&self) -> u32 {
-//         3
-//     }
-//
-//     fn point(&self, point: u32) -> Vector2f {
-//         match point {
-//             0 => Vector2f { x: 20., y: 580. },
-//             1 => Vector2f { x: 400., y: 20. },
-//             2 => Vector2f { x: 780., y: 580. },
-//             p => panic!("Non-existent point: {}", p),
-//         }
-//     }
-// }
-
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 use std::collections::HashMap;
@@ -46,7 +27,7 @@ struct Player{
     x: f32,
     y: f32,
     is_jumping: bool,
-    jump_timeout: u8,
+    jump_timeout: u8,// jump timeout is how many more frames they can jump
     horiz_movement_direction: HorizMovementDirection
 }
 
@@ -69,6 +50,9 @@ fn physics(state : &mut State){
         Y
     }
 
+    // attempts to move the player in the given direction by the given delta
+    // delta must be +/- 1
+    // returns true if successful
     fn move_player(state: &mut State, direction: MovementDirection, delta: f32) -> bool {
         let mut can_move = true;
         let mut delta_x = 0f32;
@@ -119,11 +103,16 @@ fn physics(state : &mut State){
 }
 
 fn main() {
-    let mut seed_cache = HashMap::new();
+    // determines the density of the blocks at a given y-level
+    // a density of .25 means that 1/4 spaces are filled with a block at that y-level
+    // https://www.desmos.com/calculator/bxlbewssw0
     let density = |y: f64| -> f64 {
         ((-y as f64 / 200f64) + 1.5f64).cos() / 4f64 + 0.25f64
     };
 
+    // returns true if there is a block at the provided coords
+    // uses a hashmap as a cache because the random thing is kinda slow
+    let mut seed_cache = HashMap::new();
     let mut is_block_at_coords = |x:i32, y:i32| -> bool {
         if x == 0 && y == 0{
             return false;
@@ -150,6 +139,7 @@ fn main() {
         &Default::default(),
     );
 
+    // v-sync eliminates screen tearing at the cost of latency and performance
     window.set_vertical_sync_enabled(true);
     window.set_mouse_cursor_visible(false);
 
@@ -163,23 +153,14 @@ fn main() {
         },
         blocks: Vec::new()
     };
-    for x in 0..20 {
-        for y in 0..20 {
-            if is_block_at_coords(x, y) {
-                state.blocks.push(Block {
-                    x: x * BLOCK_SIZE,
-                    y: y * BLOCK_SIZE,
-                    width: BLOCK_SIZE,
-                    height: BLOCK_SIZE
-                });
-            }
-        }
-    }
 
+    // include_bytes! builds this font into our executable, meaning that we do not need to bring
+    // a resources/ folder around. very handy!
     let font = Font::from_memory(include_bytes!("resources/sansation.ttf")).unwrap();
 
     'draw_loop:
     loop {
+        // did we get any key events?
         while let Some(event) = window.poll_event() {
             match event {
                 Event::Closed
@@ -212,17 +193,24 @@ fn main() {
             }
         }
 
+        // physics *should* be ran in its own thread
+        // however i can't figure out how to copy a vector of blocks between threads, making this
+        // impossible.
         physics(&mut state);
         physics(&mut state);
         physics(&mut state);
 
+        // the bounding coordinates of the blocks that can be seen on the screen
+        // the - 1 and + 1 ensure that blocks are loaded just before they can be seen to prevent pop-in / pop-out
         let screen_x_min = ((state.player.x as i32 - (WIDTH / 2) as i32) / BLOCK_SIZE) as i32 - 1;
         let screen_y_min = ((state.player.y as i32 - (HEIGHT / 2) as i32) / BLOCK_SIZE) as i32 - 1;
         let screen_x_max = ((state.player.x as i32 + (WIDTH / 2) as i32) / BLOCK_SIZE) as i32 + 1;
         let screen_y_max = ((state.player.y as i32 + (HEIGHT / 2) as i32) / BLOCK_SIZE) as i32 + 1;
 
+        // add new blocks if needed
         for x in screen_x_min..screen_x_max{
             for y in screen_y_min..screen_y_max{
+                // don't include already added blocks
                 if is_block_at_coords(x, y) && !state.blocks.iter().any(|&block| block.x == x * BLOCK_SIZE && block.y == y * BLOCK_SIZE){
                     state.blocks.push(Block {
                         x: x * BLOCK_SIZE,
@@ -234,6 +222,7 @@ fn main() {
             }
         }
 
+        // removes blocks that can't be rendered to improve performance
         let mut i = 0;
         while i != state.blocks.len() {
             let block = state.blocks[i];
@@ -246,12 +235,14 @@ fn main() {
 
         window.clear(Color::BLACK);
 
+        // draw the player
         let mut player_rect = RectangleShape::new();
         player_rect.set_fill_color(Color::WHITE);
         player_rect.set_position(((WIDTH / 2) as f32, (HEIGHT / 2) as f32));
         player_rect.set_size((PLAYER_WIDTH as f32, PLAYER_HEIGHT as f32));
         window.draw(&player_rect);
 
+        // draw blocks
         for block in &state.blocks {
             let mut rect = RectangleShape::new();
             rect.set_fill_color(Color::RED);
@@ -260,13 +251,13 @@ fn main() {
             window.draw(&rect);
         }
 
+        // draw height info
         let y = state.player.y as f64 / BLOCK_SIZE as f64;
         let mut text = Text::new(&format!("X:{}\nY: {}\nDensity: {:.3}", state.player.x / BLOCK_SIZE as f32, y, density(y)), &font, 16);
         text.set_fill_color(Color::WHITE);
         text.set_position((0., 0.));
         window.draw(&text);
 
-        // window.draw(&shape);
         window.display();
     }
 }
