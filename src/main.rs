@@ -145,8 +145,8 @@ fn main() {
 
     let mut window = RenderWindow::new(
         (WIDTH, HEIGHT),
-        "Game i guess",
-        Style::CLOSE,
+        "Game",
+        Style::NONE,
         &Default::default(),
     );
 
