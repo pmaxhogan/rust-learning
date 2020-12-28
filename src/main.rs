@@ -516,55 +516,67 @@ struct State{
     player: Player
 }
 
-const WIDTH: u32 = 500;
-const HEIGHT: u32 = 500;
+const WIDTH: u32 = 1920;
+const HEIGHT: u32 = 1080;
 const PLAYER_WIDTH: u32 = 50;
 const PLAYER_HEIGHT: u32 = 50;
 const GRAVITY: f32 = 0.98;
 
 fn physics(state : &mut State){
-    let mut delta_x = 1f32;
+    // let mut delta_x = 1f32;
+    //
+    // let mut move_x = true;
+    // for allowed_delta_x in 0i32..(delta_x.round() as i32) {
+    //     for block in &state.blocks {
+    //         if state.player.x + (allowed_delta_x as f32) < block.x + block.width && state.player.x + PLAYER_WIDTH as f32 + (allowed_delta_x as f32) > block.x && state.player.y < block.y + block.height && state.player.y + PLAYER_HEIGHT as f32 > block.y as f32{
+    //             move_x = false;
+    //             if allowed_delta_x == 0{
+    //                 delta_x = 0.;
+    //             }else {
+    //                 delta_x = delta_x.min((allowed_delta_x - 1) as f32);
+    //             }
+    //             break;
+    //         }
+    //     }
+    // }
 
-    let mut move_x = true;
-    for allowed_delta_x in 0i32..(delta_x.round() as i32) {
+    // if move_x{
+    //     state.player.x += (delta_x.round());
+    // }
+
+    enum Direction{
+        X,
+        Y
+    }
+
+    fn move_player(state : &mut State, direction: Direction, delta: f32){
+        let mut can_move = true;
+        let mut delta_x = 0f32;
+        let mut delta_y = 0f32;
+        match direction {
+            Direction::X => {
+                delta_x = delta;
+            }
+            Direction::Y => {
+                delta_y = delta;
+            }
+        }
+
         for block in &state.blocks {
-            if state.player.x + (allowed_delta_x as f32) < block.x + block.width && state.player.x + PLAYER_WIDTH as f32 + (allowed_delta_x as f32) > block.x && state.player.y < block.y + block.height && state.player.y + PLAYER_HEIGHT as f32 > block.y as f32{
-                move_x = false;
-                if allowed_delta_x == 0{
-                    delta_x = 0.;
-                }else {
-                    delta_x = delta_x.min((allowed_delta_x - 1) as f32);
-                }
+            if state.player.x + delta_x < block.x + block.width && state.player.x + delta_x + PLAYER_WIDTH as f32 > block.x && state.player.y + delta_y < block.y + block.height && state.player.y + PLAYER_HEIGHT as f32 + delta_y > block.y{
+                can_move = false;
                 break;
             }
         }
-    }
 
-    if move_x{
-        state.player.x += (delta_x.round());
-    }
-
-
-    let mut move_y = true;
-    let mut delta_y = GRAVITY;
-
-    for allowed_delta_y in 0i32..(delta_y.round() as i32) {
-        for block in &state.blocks {
-            if state.player.x < block.x + block.width && state.player.x + PLAYER_WIDTH as f32 > block.x && state.player.y + (allowed_delta_y as f32) < block.y + block.height && state.player.y + PLAYER_HEIGHT as f32 + allowed_delta_y as f32 > block.y{
-                move_y = false;
-                if allowed_delta_y == 0{
-                    delta_y = 0.;
-                }else {
-                    delta_y = delta_y.min((allowed_delta_y - 1) as f32);
-                }
-                break;
-            }
+        if can_move {
+            state.player.x += delta_x;
+            state.player.y += delta_y;
         }
     }
 
-    if move_y{
-        state.player.y += (delta_y.round());
-    }
+    move_player(state, Direction::X, 1f32);
+    move_player(state, Direction::Y, 1f32);
 }
 
 fn main() {
@@ -576,7 +588,7 @@ fn main() {
         }
     };
 
-    for _ in 0..20 {
+    for _ in 0..200 {
         state.blocks.push(Block {
             x: rand::thread_rng().gen_range(0, (WIDTH / 50)) as f32 * 50.,
             y: rand::thread_rng().gen_range(0, (HEIGHT / 50)) as f32 * 50.,
