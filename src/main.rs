@@ -466,12 +466,10 @@
 // }
 
 use sfml::{
-    graphics::{Color, CustomShape, CustomShapePoints, RenderTarget, RenderWindow, Shape},
-    system::Vector2f,
+    graphics::{Color, RenderTarget, RenderWindow, Shape},
     window::{Event, Key, Style},
 };
 use sfml::graphics::{RectangleShape, Transformable};
-use sfml::audio::listener::position;
 
 // #[derive(Clone, Copy)]
 // pub struct TriangleShape;
@@ -491,10 +489,7 @@ use sfml::audio::listener::position;
 //     }
 // }
 
-use std::thread;
-use std::sync::mpsc;
 use rand::Rng;
-use std::time::{Instant, SystemTime, Duration};
 
 #[derive(Debug)]
 struct Block{
@@ -505,9 +500,19 @@ struct Block{
 }
 
 #[derive(Debug)]
+enum HorizMovementDirection{
+    None,
+    Left,
+    Right
+}
+
+#[derive(Debug)]
 struct Player{
     x: f32,
-    y: f32
+    y: f32,
+    is_jumping: bool,
+    jump_timeout: u8,
+    horiz_movement_direction: HorizMovementDirection
 }
 
 #[derive(Debug)]
@@ -520,44 +525,23 @@ const WIDTH: u32 = 1920;
 const HEIGHT: u32 = 1080;
 const PLAYER_WIDTH: u32 = 50;
 const PLAYER_HEIGHT: u32 = 50;
-const GRAVITY: f32 = 0.98;
+const PLAYER_MAX_JUMP: u8 = 100;
 
 fn physics(state : &mut State){
-    // let mut delta_x = 1f32;
-    //
-    // let mut move_x = true;
-    // for allowed_delta_x in 0i32..(delta_x.round() as i32) {
-    //     for block in &state.blocks {
-    //         if state.player.x + (allowed_delta_x as f32) < block.x + block.width && state.player.x + PLAYER_WIDTH as f32 + (allowed_delta_x as f32) > block.x && state.player.y < block.y + block.height && state.player.y + PLAYER_HEIGHT as f32 > block.y as f32{
-    //             move_x = false;
-    //             if allowed_delta_x == 0{
-    //                 delta_x = 0.;
-    //             }else {
-    //                 delta_x = delta_x.min((allowed_delta_x - 1) as f32);
-    //             }
-    //             break;
-    //         }
-    //     }
-    // }
-
-    // if move_x{
-    //     state.player.x += (delta_x.round());
-    // }
-
-    enum Direction{
+    enum MovementDirection {
         X,
         Y
     }
 
-    fn move_player(state : &mut State, direction: Direction, delta: f32){
+    fn move_player(state : &mut State, direction: MovementDirection, delta: f32) -> bool{
         let mut can_move = true;
         let mut delta_x = 0f32;
         let mut delta_y = 0f32;
         match direction {
-            Direction::X => {
+            MovementDirection::X => {
                 delta_x = delta;
             }
-            Direction::Y => {
+            MovementDirection::Y => {
                 delta_y = delta;
             }
         }
@@ -572,11 +556,31 @@ fn physics(state : &mut State){
         if can_move {
             state.player.x += delta_x;
             state.player.y += delta_y;
+            return true
         }
+        false
     }
 
-    move_player(state, Direction::X, 1f32);
-    move_player(state, Direction::Y, 1f32);
+
+    if state.player.jump_timeout == 0{
+        state.player.is_jumping = false;
+    }
+
+    if state.player.is_jumping{
+        state.player.jump_timeout -= 1;
+    }
+
+    move_player(state, MovementDirection::X, match state.player.horiz_movement_direction {
+        HorizMovementDirection::Left => -1f32,
+        HorizMovementDirection::Right => 1f32,
+        HorizMovementDirection::None => 0f32
+    });
+
+    let on_floor = !move_player(state, MovementDirection::Y, if state.player.is_jumping {-1f32} else {1f32});
+
+    if !state.player.is_jumping {
+        state.player.jump_timeout = if on_floor { PLAYER_MAX_JUMP } else { 0 };
+    }
 }
 
 fn main() {
@@ -584,14 +588,17 @@ fn main() {
         blocks: Vec::new(),
         player: Player{
             x: 0.,
-            y: 0.
+            y: 0.,
+            is_jumping: false,
+            jump_timeout: 0,
+            horiz_movement_direction: HorizMovementDirection::None
         }
     };
 
     for _ in 0..200 {
         state.blocks.push(Block {
-            x: rand::thread_rng().gen_range(0, (WIDTH / 50)) as f32 * 50.,
-            y: rand::thread_rng().gen_range(0, (HEIGHT / 50)) as f32 * 50.,
+            x: rand::thread_rng().gen_range(0, WIDTH / 50) as f32 * 50.,
+            y: rand::thread_rng().gen_range(0, HEIGHT / 50) as f32 * 50.,
             width: 50.,
             height: 50.
         });
@@ -615,6 +622,28 @@ fn main() {
                 | Event::KeyPressed {
                     code: Key::Escape, ..
                 } => break 'draw_loop,
+
+                Event::KeyPressed {
+                    code: Key::Up, ..
+                } => state.player.is_jumping = true,
+                Event::KeyReleased {
+                    code: Key::Up, ..
+                } => state.player.is_jumping = false,
+
+
+                Event::KeyPressed {
+                    code: Key::Left, ..
+                } => state.player.horiz_movement_direction = HorizMovementDirection::Left,
+                Event::KeyReleased {
+                    code: Key::Left, ..
+                } => state.player.horiz_movement_direction = HorizMovementDirection::None,
+
+                Event::KeyPressed {
+                    code: Key::Right, ..
+                } => state.player.horiz_movement_direction = HorizMovementDirection::Right,
+                Event::KeyReleased {
+                    code: Key::Right, ..
+                } => state.player.horiz_movement_direction = HorizMovementDirection::None,
                 _ => {}
             }
         }
@@ -623,6 +652,12 @@ fn main() {
 
         window.clear(Color::BLACK);
 
+        let mut player_rect = RectangleShape::new();
+        player_rect.set_fill_color(Color::WHITE);
+        player_rect.set_position((state.player.x, state.player.y));
+        player_rect.set_size((PLAYER_WIDTH as f32, PLAYER_HEIGHT as f32));
+        window.draw(&player_rect);
+
         for block in &state.blocks {
             let mut rect = RectangleShape::new();
             rect.set_fill_color(Color::RED);
@@ -630,12 +665,6 @@ fn main() {
             rect.set_size((block.width, block.height));
             window.draw(&rect);
         }
-
-        let mut player_rect = RectangleShape::new();
-        player_rect.set_fill_color(Color::WHITE);
-        player_rect.set_position((state.player.x, state.player.y));
-        player_rect.set_size((PLAYER_WIDTH as f32, PLAYER_HEIGHT as f32));
-        window.draw(&player_rect);
 
         // window.draw(&shape);
         window.display();
