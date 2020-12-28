@@ -53,9 +53,10 @@ struct Player{
     horiz_movement_direction: HorizMovementDirection
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 struct State{
-    player: Player
+    player: Player,
+    blocks: Vec<Block>
 }
 
 const WIDTH: u32 = 1920;
@@ -64,13 +65,13 @@ const PLAYER_WIDTH: u32 = 50;
 const PLAYER_HEIGHT: u32 = 50;
 const PLAYER_MAX_JUMP: u8 = 100;
 
-fn physics(state : &mut State, blocks: &Vec<Block>){
+fn physics(state : &mut State){
     enum MovementDirection {
         X,
         Y
     }
 
-    fn move_player(state: &mut State, blocks: &Vec<Block>, direction: MovementDirection, delta: f32) -> bool {
+    fn move_player(state: &mut State, direction: MovementDirection, delta: f32) -> bool {
         let mut can_move = true;
         let mut delta_x = 0f32;
         let mut delta_y = 0f32;
@@ -83,7 +84,7 @@ fn physics(state : &mut State, blocks: &Vec<Block>){
             }
         }
 
-        for block in blocks {
+        for block in &state.blocks {
             if state.player.x + delta_x < block.x + block.width && state.player.x + delta_x + PLAYER_WIDTH as f32 > block.x && state.player.y + delta_y < block.y + block.height && state.player.y + PLAYER_HEIGHT as f32 + delta_y > block.y {
                 can_move = false;
                 break;
@@ -106,13 +107,13 @@ fn physics(state : &mut State, blocks: &Vec<Block>){
         state.player.jump_timeout -= 1;
     }
 
-    move_player(state, &blocks, MovementDirection::X, match state.player.horiz_movement_direction {
+    move_player(state, MovementDirection::X, match state.player.horiz_movement_direction {
         HorizMovementDirection::Left => -1f32,
         HorizMovementDirection::Right => 1f32,
         HorizMovementDirection::None => 0f32
     });
 
-    let on_floor = !move_player(state,  &blocks, MovementDirection::Y, if state.player.is_jumping { -1f32 } else { 1f32 });
+    let on_floor = !move_player(state, MovementDirection::Y, if state.player.is_jumping { -1f32 } else { 1f32 });
 
     if !state.player.is_jumping {
         state.player.jump_timeout = if on_floor { PLAYER_MAX_JUMP } else { 0 };
@@ -120,7 +121,6 @@ fn physics(state : &mut State, blocks: &Vec<Block>){
 }
 
 fn main() {
-
     let mut window = RenderWindow::new(
         (WIDTH, HEIGHT),
         "Game i guess",
@@ -128,18 +128,21 @@ fn main() {
         &Default::default(),
     );
 
-    // window.set_vertical_sync_enabled(true);
+    window.set_vertical_sync_enabled(true);
     window.set_mouse_cursor_visible(false);
 
-
-    let (tx, rx) = mpsc::channel();
-    let (tx2, rx2) = mpsc::channel();
-    let (blocks_tx, blocks_rx) = mpsc::channel();
-
-    let mut blocks = Vec::new();
-
+    let mut state = State{
+        player: Player{
+            x: 0.,
+            y: 0.,
+            is_jumping: false,
+            jump_timeout: 0,
+            horiz_movement_direction: HorizMovementDirection::None
+        },
+        blocks: Vec::new()
+    };
     for _ in 0..200 {
-        blocks.push(Block {
+        state.blocks.push(Block {
             x: rand::thread_rng().gen_range(0, WIDTH / 50) as f32 * 50.,
             y: rand::thread_rng().gen_range(0, HEIGHT / 50) as f32 * 50.,
             width: 50.,
@@ -147,40 +150,8 @@ fn main() {
         });
     }
 
-    let physics_thread = thread::spawn(move || {
-        let mut blocks:[Block];
-        let mut state = State{
-            player: Player{
-                x: 0.,
-                y: 0.,
-                is_jumping: false,
-                jump_timeout: 0,
-                horiz_movement_direction: HorizMovementDirection::None
-            }
-        };
-
-
-        loop {
-            blocks = blocks_rx.recv().unwrap().to_vec();
-
-            match rx2.try_recv() {
-                Ok(new_state) => state = new_state,
-                _ => {}
-            }
-
-            let now = Instant::now();
-            physics(&mut state, &blocks);
-            thread::sleep(Duration::from_millis(10) - now.elapsed());
-
-            tx.send(state);
-        }
-    });
-
     'draw_loop:
     loop {
-        let mut state = rx.recv().unwrap();
-        blocks_tx.send(blocks[..]);
-
         while let Some(event) = window.poll_event() {
             match event {
                 Event::Closed
@@ -213,7 +184,9 @@ fn main() {
             }
         }
 
-        tx2.send(state);
+        physics(&mut state);
+        physics(&mut state);
+        physics(&mut state);
 
         window.clear(Color::BLACK);
 
@@ -223,7 +196,7 @@ fn main() {
         player_rect.set_size((PLAYER_WIDTH as f32, PLAYER_HEIGHT as f32));
         window.draw(&player_rect);
 
-        for block in blocks {
+        for block in &state.blocks {
             let mut rect = RectangleShape::new();
             rect.set_fill_color(Color::RED);
             rect.set_position((block.x - state.player.x + (WIDTH / 2) as f32, block.y - state.player.y + (HEIGHT / 2) as f32));
@@ -234,6 +207,4 @@ fn main() {
         // window.draw(&shape);
         window.display();
     }
-
-    physics_thread.join().unwrap();
 }
