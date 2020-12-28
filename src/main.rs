@@ -176,7 +176,7 @@ fn main() {
         }
     }
 
-    let font = Font::from_file("resources/sansation.ttf").unwrap();
+    let font = Font::from_memory(include_bytes!("resources/sansation.ttf")).unwrap();
 
     'draw_loop:
     loop {
