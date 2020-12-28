@@ -23,11 +23,6 @@ use sfml::graphics::{RectangleShape, Transformable, Text, Font};
 // }
 
 use rand::{Rng, SeedableRng};
-use std::time::Instant;
-use uint::static_assertions::_core::time::Duration;
-use std::thread;
-use std::sync::mpsc;
-use std::sync::mpsc::Sender;
 use rand::rngs::StdRng;
 use std::collections::HashMap;
 
@@ -125,7 +120,7 @@ fn physics(state : &mut State){
 
 fn main() {
     let mut seed_cache = HashMap::new();
-    let mut density = |y: f64| -> f64 {
+    let density = |y: f64| -> f64 {
         ((-y as f64 / 200f64) + 1.5f64).cos() / 4f64 + 0.25f64
     };
 
