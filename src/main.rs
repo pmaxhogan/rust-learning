@@ -2,7 +2,7 @@ use sfml::{
     graphics::{Color, RenderTarget, RenderWindow, Shape},
     window::{Event, Key, Style},
 };
-use sfml::graphics::{RectangleShape, Transformable};
+use sfml::graphics::{RectangleShape, Transformable, Text, Font};
 
 // #[derive(Clone, Copy)]
 // pub struct TriangleShape;
@@ -22,22 +22,24 @@ use sfml::graphics::{RectangleShape, Transformable};
 //     }
 // }
 
-use rand::Rng;
+use rand::{Rng, SeedableRng};
 use std::time::Instant;
 use uint::static_assertions::_core::time::Duration;
 use std::thread;
 use std::sync::mpsc;
 use std::sync::mpsc::Sender;
+use rand::rngs::StdRng;
+use std::collections::HashMap;
 
 #[derive(Debug, Copy, Clone)]
 struct Block{
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 enum HorizMovementDirection{
     None,
     Left,
@@ -63,7 +65,8 @@ const WIDTH: u32 = 1920;
 const HEIGHT: u32 = 1080;
 const PLAYER_WIDTH: u32 = 50;
 const PLAYER_HEIGHT: u32 = 50;
-const PLAYER_MAX_JUMP: u8 = 100;
+const PLAYER_MAX_JUMP: u8 = (PLAYER_HEIGHT * 4) as u8;
+const BLOCK_SIZE:i32 = 50;
 
 fn physics(state : &mut State){
     enum MovementDirection {
@@ -85,7 +88,7 @@ fn physics(state : &mut State){
         }
 
         for block in &state.blocks {
-            if state.player.x + delta_x < block.x + block.width && state.player.x + delta_x + PLAYER_WIDTH as f32 > block.x && state.player.y + delta_y < block.y + block.height && state.player.y + PLAYER_HEIGHT as f32 + delta_y > block.y {
+            if state.player.x + delta_x < (block.x + block.width) as f32 && state.player.x + delta_x + PLAYER_WIDTH as f32 > block.x as f32 && state.player.y + delta_y < (block.y + block.height) as f32 && state.player.y + PLAYER_HEIGHT as f32 + delta_y > block.y as f32 {
                 can_move = false;
                 break;
             }
@@ -121,6 +124,30 @@ fn physics(state : &mut State){
 }
 
 fn main() {
+    let mut seed_cache = HashMap::new();
+    let mut density = |y: f64| -> f64 {
+        ((-y as f64 / 200f64) + 1.5f64).cos() / 4f64 + 0.25f64
+    };
+
+    let mut is_block_at_coords = |x:i32, y:i32| -> bool {
+        if x == 0 && y == 0{
+            return false;
+        }
+
+        let seed = x as i64 + ((y as i64 ) << 32);
+        return match seed_cache.get(&seed) {
+            Some(is_block) => *is_block,
+            None => {
+                let this_density = density(y as f64);
+
+                let is_block = StdRng::seed_from_u64(seed as u64).gen_range(0f64, 1f64) < this_density;
+                seed_cache.insert(seed, is_block);
+                is_block
+            }
+        }
+
+    };
+
     let mut window = RenderWindow::new(
         (WIDTH, HEIGHT),
         "Game i guess",
@@ -141,14 +168,20 @@ fn main() {
         },
         blocks: Vec::new()
     };
-    for _ in 0..200 {
-        state.blocks.push(Block {
-            x: rand::thread_rng().gen_range(0, WIDTH / 50) as f32 * 50.,
-            y: rand::thread_rng().gen_range(0, HEIGHT / 50) as f32 * 50.,
-            width: 50.,
-            height: 50.
-        });
+    for x in 0..20 {
+        for y in 0..20 {
+            if is_block_at_coords(x, y) {
+                state.blocks.push(Block {
+                    x: x * BLOCK_SIZE,
+                    y: y * BLOCK_SIZE,
+                    width: BLOCK_SIZE,
+                    height: BLOCK_SIZE
+                });
+            }
+        }
     }
+
+    let font = Font::from_file("resources/sansation.ttf").unwrap();
 
     'draw_loop:
     loop {
@@ -188,6 +221,34 @@ fn main() {
         physics(&mut state);
         physics(&mut state);
 
+        let screen_x_min = ((state.player.x as i32 - (WIDTH / 2) as i32) / BLOCK_SIZE) as i32 - 1;
+        let screen_y_min = ((state.player.y as i32 - (HEIGHT / 2) as i32) / BLOCK_SIZE) as i32 - 1;
+        let screen_x_max = ((state.player.x as i32 + (WIDTH / 2) as i32) / BLOCK_SIZE) as i32 + 1;
+        let screen_y_max = ((state.player.y as i32 + (HEIGHT / 2) as i32) / BLOCK_SIZE) as i32 + 1;
+
+        for x in screen_x_min..screen_x_max{
+            for y in screen_y_min..screen_y_max{
+                if is_block_at_coords(x, y) && !state.blocks.iter().any(|&block| block.x == x * BLOCK_SIZE && block.y == y * BLOCK_SIZE){
+                    state.blocks.push(Block {
+                        x: x * BLOCK_SIZE,
+                        y: y * BLOCK_SIZE,
+                        width: BLOCK_SIZE,
+                        height: BLOCK_SIZE
+                    });
+                }
+            }
+        }
+
+        let mut i = 0;
+        while i != state.blocks.len() {
+            let block = state.blocks[i];
+            if block.x / BLOCK_SIZE < screen_x_min || block.y / BLOCK_SIZE < screen_y_min || block.x / BLOCK_SIZE > screen_x_max || block.y / BLOCK_SIZE > screen_y_max {
+                state.blocks.remove(i);
+            } else {
+                i += 1;
+            }
+        }
+
         window.clear(Color::BLACK);
 
         let mut player_rect = RectangleShape::new();
@@ -199,10 +260,16 @@ fn main() {
         for block in &state.blocks {
             let mut rect = RectangleShape::new();
             rect.set_fill_color(Color::RED);
-            rect.set_position((block.x - state.player.x + (WIDTH / 2) as f32, block.y - state.player.y + (HEIGHT / 2) as f32));
-            rect.set_size((block.width, block.height));
+            rect.set_position((block.x as f32 - state.player.x + (WIDTH / 2) as f32, block.y as f32 - state.player.y + (HEIGHT / 2) as f32));
+            rect.set_size((block.width as f32, block.height as f32));
             window.draw(&rect);
         }
+
+        let y = state.player.y as f64 / BLOCK_SIZE as f64;
+        let mut text = Text::new(&format!("X:{}\nY: {}\nDensity: {:.3}", state.player.x / BLOCK_SIZE as f32, y, density(y)), &font, 16);
+        text.set_fill_color(Color::WHITE);
+        text.set_position((0., 0.));
+        window.draw(&text);
 
         // window.draw(&shape);
         window.display();
