@@ -31,7 +31,8 @@ struct Player{
     y: f32,
     is_jumping: bool,
     jump_timeout: u8,// jump timeout is how many more frames they can jump
-    horiz_movement_direction: HorizMovementDirection
+    horiz_movement_direction: HorizMovementDirection,
+    jump_key_pressed: bool
 }
 
 #[derive(Debug)]
@@ -181,6 +182,7 @@ fn main() {
     // v-sync eliminates screen tearing at the cost of latency and performance
     window.set_vertical_sync_enabled(true);
     window.set_mouse_cursor_visible(false);
+    window.set_key_repeat_enabled(false);
 
 
     // include_bytes! builds this font into our executable, meaning that we do not need to bring
@@ -194,6 +196,7 @@ fn main() {
             x: 0.,
             y: 0.,
             is_jumping: false,
+            jump_key_pressed: false,
             jump_timeout: 0,
             horiz_movement_direction: HorizMovementDirection::None
         },
@@ -248,10 +251,10 @@ fn main() {
 
                     Event::KeyPressed {
                         code: Key::Up, ..
-                    } => state.player.is_jumping = true,
+                    } => state.player.jump_key_pressed = true,
                     Event::KeyReleased {
                         code: Key::Up, ..
-                    } => state.player.is_jumping = false,
+                    } => state.player.jump_key_pressed = false,
 
                     Event::KeyPressed {
                         code: Key::Left, ..
@@ -269,6 +272,8 @@ fn main() {
                     _ => {}
                 }
             }
+
+            state.player.is_jumping = state.player.jump_key_pressed;
 
             window.clear(Color::BLACK);
 
