@@ -6,6 +6,9 @@ use sfml::graphics::{RectangleShape, Transformable, Text, Font};
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 use std::collections::HashMap;
+use std::thread;
+use std::time::Duration;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Copy, Clone)]
 struct Block{
@@ -34,7 +37,8 @@ struct Player{
 #[derive(Debug)]
 struct State{
     player: Player,
-    blocks: Vec<Block>
+    blocks: Vec<Block>,
+    quit: bool
 }
 
 const WIDTH: u32 = 1920;
@@ -44,63 +48,6 @@ const PLAYER_HEIGHT: u32 = 50;
 const PLAYER_MAX_JUMP: u8 = (PLAYER_HEIGHT * 4) as u8;
 const BLOCK_SIZE:i32 = 50;
 
-fn physics(state : &mut State){
-    enum MovementDirection {
-        X,
-        Y
-    }
-
-    // attempts to move the player in the given direction by the given delta
-    // delta must be +/- 1
-    // returns true if successful
-    fn move_player(state: &mut State, direction: MovementDirection, delta: f32) -> bool {
-        let mut can_move = true;
-        let mut delta_x = 0f32;
-        let mut delta_y = 0f32;
-        match direction {
-            MovementDirection::X => {
-                delta_x = delta;
-            }
-            MovementDirection::Y => {
-                delta_y = delta;
-            }
-        }
-
-        for block in &state.blocks {
-            if state.player.x + delta_x < (block.x + block.width) as f32 && state.player.x + delta_x + PLAYER_WIDTH as f32 > block.x as f32 && state.player.y + delta_y < (block.y + block.height) as f32 && state.player.y + PLAYER_HEIGHT as f32 + delta_y > block.y as f32 {
-                can_move = false;
-                break;
-            }
-        }
-
-        if can_move {
-            state.player.x += delta_x;
-            state.player.y += delta_y;
-            return true
-        }
-        false
-    }
-
-    if state.player.jump_timeout == 0 {
-        state.player.is_jumping = false;
-    }
-
-    if state.player.is_jumping {
-        state.player.jump_timeout -= 1;
-    }
-
-    move_player(state, MovementDirection::X, match state.player.horiz_movement_direction {
-        HorizMovementDirection::Left => -1f32,
-        HorizMovementDirection::Right => 1f32,
-        HorizMovementDirection::None => 0f32
-    });
-
-    let on_floor = !move_player(state, MovementDirection::Y, if state.player.is_jumping { -1f32 } else { 1f32 });
-
-    if !state.player.is_jumping {
-        state.player.jump_timeout = if on_floor { PLAYER_MAX_JUMP } else { 0 };
-    }
-}
 
 fn main() {
     // determines the density of the blocks at a given y-level
@@ -113,7 +60,7 @@ fn main() {
     // returns true if there is a block at the provided coords
     // uses a hashmap as a cache because the random thing is kinda slow
     let mut seed_cache = HashMap::new();
-    let mut is_block_at_coords = |x:i32, y:i32| -> bool {
+    let mut is_block_at_coords = move | x:i32, y:i32| -> bool {
         if x == 0 && y == 0{
             return false;
         }
@@ -132,74 +79,7 @@ fn main() {
 
     };
 
-    let mut window = RenderWindow::new(
-        (WIDTH, HEIGHT),
-        "Game",
-        Style::NONE,
-        &Default::default(),
-    );
-
-    // v-sync eliminates screen tearing at the cost of latency and performance
-    window.set_vertical_sync_enabled(true);
-    window.set_mouse_cursor_visible(false);
-
-    let mut state = State{
-        player: Player{
-            x: 0.,
-            y: 0.,
-            is_jumping: false,
-            jump_timeout: 0,
-            horiz_movement_direction: HorizMovementDirection::None
-        },
-        blocks: Vec::new()
-    };
-
-    // include_bytes! builds this font into our executable, meaning that we do not need to bring
-    // a resources/ folder around. very handy!
-    let font = Font::from_memory(include_bytes!("resources/sansation.ttf")).unwrap();
-
-    'draw_loop:
-    loop {
-        // did we get any key events?
-        while let Some(event) = window.poll_event() {
-            match event {
-                Event::Closed
-                | Event::KeyPressed {
-                    code: Key::Escape, ..
-                } => break 'draw_loop,
-
-                Event::KeyPressed {
-                    code: Key::Up, ..
-                } => state.player.is_jumping = true,
-                Event::KeyReleased {
-                    code: Key::Up, ..
-                } => state.player.is_jumping = false,
-
-
-                Event::KeyPressed {
-                    code: Key::Left, ..
-                } => state.player.horiz_movement_direction = HorizMovementDirection::Left,
-                Event::KeyReleased {
-                    code: Key::Left, ..
-                } => state.player.horiz_movement_direction = HorizMovementDirection::None,
-
-                Event::KeyPressed {
-                    code: Key::Right, ..
-                } => state.player.horiz_movement_direction = HorizMovementDirection::Right,
-                Event::KeyReleased {
-                    code: Key::Right, ..
-                } => state.player.horiz_movement_direction = HorizMovementDirection::None,
-                _ => {}
-            }
-        }
-
-        // physics *should* be ran in its own thread
-        // however i can't figure out how to copy a vector of blocks between threads, making this
-        // impossible.
-        physics(&mut state);
-        physics(&mut state);
-        physics(&mut state);
-
+    let mut physics = move|state: &mut State| -> () {
         // the bounding coordinates of the blocks that can be seen on the screen
         // the - 1 and + 1 ensure that blocks are loaded just before they can be seen to prevent pop-in / pop-out
         let screen_x_min = ((state.player.x as i32 - (WIDTH / 2) as i32) / BLOCK_SIZE) as i32 - 1;
@@ -208,10 +88,10 @@ fn main() {
         let screen_y_max = ((state.player.y as i32 + (HEIGHT / 2) as i32) / BLOCK_SIZE) as i32 + 1;
 
         // add new blocks if needed
-        for x in screen_x_min..screen_x_max{
-            for y in screen_y_min..screen_y_max{
+        for x in screen_x_min..screen_x_max {
+            for y in screen_y_min..screen_y_max {
                 // don't include already added blocks
-                if is_block_at_coords(x, y) && !state.blocks.iter().any(|&block| block.x == x * BLOCK_SIZE && block.y == y * BLOCK_SIZE){
+                if is_block_at_coords(x, y) && !state.blocks.iter().any(|&block| block.x == x * BLOCK_SIZE && block.y == y * BLOCK_SIZE) {
                     state.blocks.push(Block {
                         x: x * BLOCK_SIZE,
                         y: y * BLOCK_SIZE,
@@ -233,31 +113,192 @@ fn main() {
             }
         }
 
-        window.clear(Color::BLACK);
 
-        // draw the player
-        let mut player_rect = RectangleShape::new();
-        player_rect.set_fill_color(Color::WHITE);
-        player_rect.set_position(((WIDTH / 2) as f32, (HEIGHT / 2) as f32));
-        player_rect.set_size((PLAYER_WIDTH as f32, PLAYER_HEIGHT as f32));
-        window.draw(&player_rect);
-
-        // draw blocks
-        for block in &state.blocks {
-            let mut rect = RectangleShape::new();
-            rect.set_fill_color(Color::RED);
-            rect.set_position((block.x as f32 - state.player.x + (WIDTH / 2) as f32, block.y as f32 - state.player.y + (HEIGHT / 2) as f32));
-            rect.set_size((block.width as f32, block.height as f32));
-            window.draw(&rect);
+        enum MovementDirection {
+            X,
+            Y
         }
 
-        // draw height info
-        let y = state.player.y as f64 / BLOCK_SIZE as f64;
-        let mut text = Text::new(&format!("X:{}\nY: {}\nDensity: {:.3}", state.player.x / BLOCK_SIZE as f32, y, density(y)), &font, 16);
-        text.set_fill_color(Color::WHITE);
-        text.set_position((0., 0.));
-        window.draw(&text);
+        // attempts to move the player in the given direction by the given delta
+        // delta must be +/- 1
+        // returns true if successful
+        fn move_player(state: &mut State, direction: MovementDirection, delta: f32) -> bool {
+            let mut can_move = true;
+            let mut delta_x = 0f32;
+            let mut delta_y = 0f32;
+            match direction {
+                MovementDirection::X => {
+                    delta_x = delta;
+                }
+                MovementDirection::Y => {
+                    delta_y = delta;
+                }
+            }
+
+            for block in &state.blocks {
+                if state.player.x + delta_x < (block.x + block.width) as f32 && state.player.x + delta_x + PLAYER_WIDTH as f32 > block.x as f32 && state.player.y + delta_y < (block.y + block.height) as f32 && state.player.y + PLAYER_HEIGHT as f32 + delta_y > block.y as f32 {
+                    can_move = false;
+                    break;
+                }
+            }
+
+            if can_move {
+                state.player.x += delta_x;
+                state.player.y += delta_y;
+                return true
+            }
+            false
+        }
+
+        if state.player.jump_timeout == 0 {
+            state.player.is_jumping = false;
+        }
+
+        if state.player.is_jumping {
+            state.player.jump_timeout -= 1;
+        }
+
+        move_player(state, MovementDirection::X, match state.player.horiz_movement_direction {
+            HorizMovementDirection::Left => -1f32,
+            HorizMovementDirection::Right => 1f32,
+            HorizMovementDirection::None => 0f32
+        });
+
+        let on_floor = !move_player(state, MovementDirection::Y, if state.player.is_jumping { -1f32 } else { 1f32 });
+
+        if !state.player.is_jumping {
+            state.player.jump_timeout = if on_floor { PLAYER_MAX_JUMP } else { 0 };
+        }
+    };
+
+    let mut window = RenderWindow::new(
+        (WIDTH, HEIGHT),
+        "Game",
+        Style::NONE,
+        &Default::default(),
+    );
+
+    // v-sync eliminates screen tearing at the cost of latency and performance
+    window.set_vertical_sync_enabled(true);
+    window.set_mouse_cursor_visible(false);
+
+
+    // include_bytes! builds this font into our executable, meaning that we do not need to bring
+    // a resources/ folder around. very handy!
+    // we unwrap because it should crash if the font isn't there (a bug)
+    let font = Font::from_memory(include_bytes!("resources/sansation.ttf")).unwrap();
+
+
+    let mut state = State{
+        player: Player{
+            x: 0.,
+            y: 0.,
+            is_jumping: false,
+            jump_timeout: 0,
+            horiz_movement_direction: HorizMovementDirection::None
+        },
+        blocks: Vec::new(),
+        quit: false
+    };
+
+
+    // not completely sure how Arc<Mutex<T>> works but it does work
+    // see https://doc.rust-lang.org/book/ch16-03-shared-state.html
+    let state_holder = Arc::new(Mutex::new(state));
+
+    let physics_thread;
+    {
+        let our_state_holder = Arc::clone(&state_holder);
+        physics_thread = thread::spawn(move || {
+            loop {
+                // we need this block to ensure that our MutexGuard goes out of scope (and is freed)
+                // before we sleep. if we sleep before releasing the lock, then we will basically
+                // get the lock as soon we release it, preventing the main thread from getting it!
+                {
+                    let mut state_guard = our_state_holder.lock().unwrap();
+                    let state = &mut *state_guard;
+
+                    if state.quit{ break; }
+
+                    physics(state);
+                    physics(state);
+                }
+                // TODO: make this calculated from above time
+                thread::sleep(Duration::from_millis(5));
+            }
+        });
+    }
+
+    'draw_loop:
+    loop {
+        // see above for why we have a block here
+        {
+            let our_state_holder = Arc::clone(&state_holder);
+            let mut state_guard = our_state_holder.lock().unwrap();
+
+            let state = &mut *state_guard;
+
+            // did we get any key events?
+            while let Some(event) = window.poll_event() {
+                match event {
+                    Event::Closed
+                    | Event::KeyPressed {
+                        code: Key::Escape, ..
+                    } => break 'draw_loop,
+
+                    Event::KeyPressed {
+                        code: Key::Up, ..
+                    } => state.player.is_jumping = true,
+                    Event::KeyReleased {
+                        code: Key::Up, ..
+                    } => state.player.is_jumping = false,
+
+                    Event::KeyPressed {
+                        code: Key::Left, ..
+                    } => state.player.horiz_movement_direction = HorizMovementDirection::Left,
+                    Event::KeyReleased {
+                        code: Key::Left, ..
+                    } => state.player.horiz_movement_direction = HorizMovementDirection::None,
+
+                    Event::KeyPressed {
+                        code: Key::Right, ..
+                    } => state.player.horiz_movement_direction = HorizMovementDirection::Right,
+                    Event::KeyReleased {
+                        code: Key::Right, ..
+                    } => state.player.horiz_movement_direction = HorizMovementDirection::None,
+                    _ => {}
+                }
+            }
+
+            window.clear(Color::BLACK);
+
+            // draw the player
+            let mut player_rect = RectangleShape::new();
+            player_rect.set_fill_color(Color::WHITE);
+            player_rect.set_position(((WIDTH / 2) as f32, (HEIGHT / 2) as f32));
+            player_rect.set_size((PLAYER_WIDTH as f32, PLAYER_HEIGHT as f32));
+            window.draw(&player_rect);
+
+            // draw blocks
+            for block in &state.blocks {
+                let mut rect = RectangleShape::new();
+                rect.set_fill_color(Color::RED);
+                rect.set_position((block.x as f32 - state.player.x + (WIDTH / 2) as f32, block.y as f32 - state.player.y + (HEIGHT / 2) as f32));
+                rect.set_size((block.width as f32, block.height as f32));
+                window.draw(&rect);
+            }
+
+            // draw height info
+            let y = state.player.y as f64 / BLOCK_SIZE as f64;
+            let mut text = Text::new(&format!("X:{}\nY: {}\nDensity: {:.3}", state.player.x / BLOCK_SIZE as f32, y, density(y)), &font, 16);
+            text.set_fill_color(Color::WHITE);
+            text.set_position((0., 0.));
+            window.draw(&text);
+        }
 
         window.display();
     }
+
+    (*state_holder.lock().unwrap()).quit = true;
+    physics_thread.join().unwrap();
 }
