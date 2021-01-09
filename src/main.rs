@@ -48,6 +48,7 @@ const PLAYER_WIDTH: u32 = 50;
 const PLAYER_HEIGHT: u32 = 50;
 const PLAYER_MAX_JUMP: u8 = (PLAYER_HEIGHT * 4) as u8;
 const BLOCK_SIZE:i32 = 50;
+const STOP_JUMP_ON_CEIL_HIT:bool = false;
 
 
 fn main() {
@@ -165,10 +166,20 @@ fn main() {
             HorizMovementDirection::None => 0f32
         });
 
-        let on_floor = !move_player(state, MovementDirection::Y, if state.player.is_jumping { -1f32 } else { 1f32 });
+        let on_vert_surface = !move_player(state, MovementDirection::Y, if state.player.is_jumping { -1f32 } else { 1f32 });
 
-        if !state.player.is_jumping {
-            state.player.jump_timeout = if on_floor { PLAYER_MAX_JUMP } else { 0 };
+        if on_vert_surface && !state.player.is_jumping{
+            state.player.jump_timeout = PLAYER_MAX_JUMP;
+        }
+
+        if !on_vert_surface && !state.player.is_jumping  {
+            state.player.jump_timeout = 0;
+        }
+
+        if STOP_JUMP_ON_CEIL_HIT {
+            if on_vert_surface && state.player.is_jumping {
+                state.player.jump_timeout = 0;
+            }
         }
     };
 
