@@ -7,7 +7,7 @@ use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 use std::collections::HashMap;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Copy, Clone)]
@@ -39,9 +39,11 @@ struct Player{
 struct State{
     player: Player,
     blocks: Vec<Block>,
-    quit: bool
+    quit: bool,
+    record: i32
 }
 
+const GAME_SECONDS: u64 = 30;
 const WIDTH: u32 = 1920;
 const HEIGHT: u32 = 1080;
 const PLAYER_WIDTH: u32 = 50;
@@ -239,6 +241,7 @@ fn main() {
             jump_timeout: 0,
             horiz_movement_direction: HorizMovementDirection::None
         },
+        record: 0,
         blocks: Vec::new(),
         quit: false
     };
@@ -250,6 +253,7 @@ fn main() {
 
     let physics_thread;
     {
+
         let our_state_holder = Arc::clone(&state_holder);
         physics_thread = thread::spawn(move || {
             loop {
@@ -270,6 +274,8 @@ fn main() {
             }
         });
     }
+
+    let mut start = Instant::now();
 
     'draw_loop:
     loop {
@@ -326,7 +332,7 @@ fn main() {
             // draw blocks
             for block in &state.blocks {
                 let mut rect = RectangleShape::new();
-                let (r, g, b) = hsv_to_rgb(((block.x.abs() as u32) / 100) % 360, 1.0, 1.0);
+                let (r, g, b) = hsv_to_rgb(((block.x.abs() as u32) / 75) % 360, 1.0, 1.0);
                 rect.set_fill_color(Color::rgb(r as u8, g as u8, b as u8));
                 rect.set_position((block.x as f32 - state.player.x + (WIDTH / 2) as f32, block.y as f32 - state.player.y + (HEIGHT / 2) as f32));
                 rect.set_size((block.width as f32, block.height as f32));
@@ -334,11 +340,38 @@ fn main() {
             }
 
             // draw height info
+            let x = state.player.x / BLOCK_SIZE as f32;
             let y = state.player.y as f64 / BLOCK_SIZE as f64;
-            let mut text = Text::new(&format!("X:{}\nY: {}\nDensity: {:.3}", state.player.x / BLOCK_SIZE as f32, y, density(y)), &font, 16);
+            let mut text = Text::new(&format!("X:{}\nY: {}\nDensity: {:.3}", x, y, density(y)), &font, 16);
+            text.set_fill_color(Color::WHITE);
+            text.set_position((0., 66.));
+            window.draw(&text);
+
+            let duration = start.elapsed();
+
+            let mut text = Text::new(&format!("{} seconds remaining\nRecord: {}", GAME_SECONDS - duration.as_secs(), state.record), &font, 30);
             text.set_fill_color(Color::WHITE);
             text.set_position((0., 0.));
             window.draw(&text);
+
+
+            if state.record < x as i32 {
+                state.record = x as i32;
+            }
+
+            if duration.as_secs() >= GAME_SECONDS{
+                start = Instant::now();
+
+
+                state.player = Player{
+                    x: 0.,
+                    y: 0.,
+                    is_jumping: false,
+                    jump_key_pressed: false,
+                    jump_timeout: 0,
+                    horiz_movement_direction: HorizMovementDirection::None
+                };
+            }
         }
 
         window.display();
