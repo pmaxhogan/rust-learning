@@ -230,7 +230,7 @@ fn main() {
     let font = Font::from_memory(include_bytes!("resources/sansation.ttf")).unwrap();
 
 
-    let mut state = State{
+    let state = State{
         player: Player{
             x: 0.,
             y: 0.,
