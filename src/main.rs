@@ -50,6 +50,34 @@ const PLAYER_MAX_JUMP: u8 = (PLAYER_HEIGHT * 4) as u8;
 const BLOCK_SIZE:i32 = 50;
 const STOP_JUMP_ON_CEIL_HIT:bool = false;
 
+/**
+* h is [0, 360]
+* s and v are [0, 1]
+*/
+fn hsv_to_rgb(h : u32, s : f32, v : f32) -> (u32, u32, u32) {
+    if h > 360 || s < 0f32 || s > 1f32 || v < 0f32 || v > 1f32{
+        panic!("Parameters to hsv_to_rgb() should be in the ranges [0, 360], [0, 1], and [0, 1] respectively")
+    }
+
+    let c = v * s;
+    let x = c * (1f32 - ((h as f32 / 60f32) % 2f32 - 1f32).abs());
+    let m = v - c;
+    let (r_2, g_2, b_2) = match h {
+        0 ..= 60 => (c, x, 0f32),
+        61 ..= 120 => (x, c, 0f32),
+        121 ..= 180 => (0f32, c, x),
+        181 ..= 240 => (0f32, x, c),
+        241 ..= 300 => (x, 0f32, c),
+        301 ..= 360 => (c, 0f32, x),
+        _ => {
+            panic!("Not a valid H value!");
+        }
+    };
+
+    let (r, g, b) = ((r_2 +m) * 255f32, (g_2 + m) * 255f32, (b_2 + m) * 255f32);
+
+    return (r.round() as u32, g.round() as u32, b.round() as u32);
+}
 
 fn main() {
     // determines the density of the blocks at a given y-level
@@ -298,7 +326,8 @@ fn main() {
             // draw blocks
             for block in &state.blocks {
                 let mut rect = RectangleShape::new();
-                rect.set_fill_color(Color::RED);
+                let (r, g, b) = hsv_to_rgb(((block.x.abs() as u32) / 100) % 360, 1.0, 1.0);
+                rect.set_fill_color(Color::rgb(r as u8, g as u8, b as u8));
                 rect.set_position((block.x as f32 - state.player.x + (WIDTH / 2) as f32, block.y as f32 - state.player.y + (HEIGHT / 2) as f32));
                 rect.set_size((block.width as f32, block.height as f32));
                 window.draw(&rect);
