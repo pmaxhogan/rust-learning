@@ -2,7 +2,7 @@ use sfml::{
     graphics::{Color, RenderTarget, RenderWindow, Shape},
     window::{Event, Key, Style},
 };
-use sfml::graphics::{RectangleShape, Transformable, Text, Font};
+use sfml::graphics::{RectangleShape, Transformable, Text, Font, CircleShape};
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 use std::collections::HashMap;
@@ -15,7 +15,8 @@ struct Block{
     x: i32,
     y: i32,
     width: i32,
-    height: i32
+    height: i32,
+    block_type: BlockType,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -23,6 +24,27 @@ enum HorizMovementDirection{
     None,
     Left,
     Right
+}
+
+enum MovementDirection {
+    X,
+    Y
+}
+
+enum TeleportDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+    None
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+enum BlockType{
+    None,
+    Block,
+    LinkRight,
+    LinkDown
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -92,20 +114,35 @@ fn main() {
     // returns true if there is a block at the provided coords
     // uses a hashmap as a cache because the random thing is kinda slow
     let mut seed_cache = HashMap::new();
-    let mut is_block_at_coords = move | x:i32, y:i32| -> bool {
+    let mut is_block_at_coords = move | x:i32, y:i32| -> BlockType {
         if x == 0 && y == 0{
-            return false;
+            return BlockType::None;
         }
 
         let seed = x as i64 + ((y as i64 ) << 32);
         return match seed_cache.get(&seed) {
-            Some(is_block) => *is_block,
+            Some(block_type) => *block_type,
             None => {
                 let this_density = density(y as f64);
 
-                let is_block = StdRng::seed_from_u64(seed as u64).gen_range(0f64, 1f64) < this_density;
-                seed_cache.insert(seed, is_block);
-                is_block
+                let seed_val = StdRng::seed_from_u64(seed as u64).gen_range(0f64, 1f64);
+                let is_block = seed_val < this_density;
+                let prob = 0.99;
+                let is_link = seed_val > prob;
+
+                let mut block_type = BlockType::None;
+
+                if is_block {
+                    block_type = BlockType::Block;
+                }
+
+                if is_link {
+                    let is_right = seed_val > ((1. - prob) / 2.) + prob;
+                    block_type = if is_right { BlockType::LinkRight } else { BlockType::LinkDown };
+                }
+
+                seed_cache.insert(seed, block_type);
+                block_type
             }
         }
 
@@ -122,13 +159,16 @@ fn main() {
         // add new blocks if needed
         for x in screen_x_min..screen_x_max {
             for y in screen_y_min..screen_y_max {
+                let at_coords = is_block_at_coords(x, y);
+
                 // don't include already added blocks
-                if is_block_at_coords(x, y) && !state.blocks.iter().any(|&block| block.x == x * BLOCK_SIZE && block.y == y * BLOCK_SIZE) {
+                if at_coords != BlockType::None && !state.blocks.iter().any(|&block| block.x == x * BLOCK_SIZE && block.y == y * BLOCK_SIZE) {
                     state.blocks.push(Block {
                         x: x * BLOCK_SIZE,
                         y: y * BLOCK_SIZE,
                         width: BLOCK_SIZE,
-                        height: BLOCK_SIZE
+                        height: BLOCK_SIZE,
+                        block_type: at_coords
                     });
                 }
             }
@@ -145,17 +185,13 @@ fn main() {
             }
         }
 
-
-        enum MovementDirection {
-            X,
-            Y
-        }
-
         // attempts to move the player in the given direction by the given delta
         // delta must be +/- 1
         // returns true if successful
         fn move_player(state: &mut State, direction: MovementDirection, delta: f32) -> bool {
             let mut can_move = true;
+            let mut teleport = false;
+            let mut teleport_down = false;
             let mut delta_x = 0f32;
             let mut delta_y = 0f32;
             match direction {
@@ -169,8 +205,28 @@ fn main() {
 
             for block in &state.blocks {
                 if state.player.x + delta_x < (block.x + block.width) as f32 && state.player.x + delta_x + PLAYER_WIDTH as f32 > block.x as f32 && state.player.y + delta_y < (block.y + block.height) as f32 && state.player.y + PLAYER_HEIGHT as f32 + delta_y > block.y as f32 {
-                    can_move = false;
-                    break;
+                    if block.block_type != BlockType::Block {
+                        teleport = true;
+
+                        teleport_down = match block.block_type {
+                            BlockType::LinkRight => false,
+                            BlockType::LinkDown => true,
+                            _ => {panic!("invalid type")}
+                        };
+
+                        state.player.x = block.x as f32;
+                        state.player.y = block.y as f32;
+                    } else{
+                        can_move = false;
+                        break;
+                    }
+                }
+            }
+
+            if teleport{
+                let mut teleport_delta = PLAYER_WIDTH * 5;
+                while !move_player(state, if teleport_down { MovementDirection::Y } else { MovementDirection::X }, teleport_delta as f32) {
+                    teleport_delta += PLAYER_WIDTH;
                 }
             }
 
@@ -331,12 +387,24 @@ fn main() {
 
             // draw blocks
             for block in &state.blocks {
-                let mut rect = RectangleShape::new();
-                let (r, g, b) = hsv_to_rgb(((block.x.abs() as u32) / 75) % 360, 1.0, 1.0);
-                rect.set_fill_color(Color::rgb(r as u8, g as u8, b as u8));
-                rect.set_position((block.x as f32 - state.player.x + (WIDTH / 2) as f32, block.y as f32 - state.player.y + (HEIGHT / 2) as f32));
-                rect.set_size((block.width as f32, block.height as f32));
-                window.draw(&rect);
+                if block.block_type != BlockType::Block {
+                    let mut circle = CircleShape::new((block.width / 2) as f32, 100);
+
+                    if block.block_type == BlockType::LinkDown{
+                        circle.set_fill_color(Color::rgb(128, 128, 128));
+                    }
+
+                    circle.set_position((block.x as f32 - state.player.x + (WIDTH / 2) as f32, block.y as f32 - state.player.y + (HEIGHT / 2) as f32));
+
+                    window.draw(&circle);
+                } else {
+                    let mut rect = RectangleShape::new();
+                    let (r, g, b) = hsv_to_rgb(((block.x.abs() as u32) / 75) % 360, 1.0, 1.0);
+                    rect.set_fill_color(Color::rgb(r as u8, g as u8, b as u8));
+                    rect.set_position((block.x as f32 - state.player.x + (WIDTH / 2) as f32, block.y as f32 - state.player.y + (HEIGHT / 2) as f32));
+                    rect.set_size((block.width as f32, block.height as f32));
+                    window.draw(&rect);
+                }
             }
 
             // draw height info
