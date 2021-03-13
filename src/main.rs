@@ -38,7 +38,8 @@ enum MessageVal {
     Great,
     Good,
     Mediocre,
-    Awful
+    Awful,
+    Miss
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -73,7 +74,7 @@ const SPEED:f32 = 20f32;
 const SCREEN_OFFSET:f32 = 100f32;
 const MAX_KEY_ERROR:f64 = 250f64;
 const WARMUP_SECS:i32 = 3;
-const RECORD:bool = true;
+const RECORD:bool = false;
 const SECONDS_TO_SKIP:u64 = 0;
 const MESSAGE_SIZE:u32   = 20;
 const MESSAGE_DURATION:f64 = 250.;
@@ -144,13 +145,16 @@ fn main() {
                     error = hit_key.time - game_time;
 
                     state.score += error.abs();
+
+                    state.messages.push(Message{ val: delay_to_message_val(error), time: state.game_time, direction: dir });
                 }else{
                     // you didn't hit anything
                     error = MAX_KEY_ERROR;
                     state.score += error.abs();
+
+                    state.messages.push(Message{ val: MessageVal::Miss, time: state.game_time, direction: dir });
                 }
 
-                state.messages.push(Message{ val: delay_to_message_val(error), time: state.game_time, direction: dir });
             }
         };
 
@@ -191,16 +195,16 @@ fn main() {
 
                 state.score += error;
 
-                state.messages.push(Message{ val: delay_to_message_val(error), time: state.game_time, direction: map_key.direction });
+                state.messages.push(Message{ val: MessageVal::Miss, time: state.game_time, direction: map_key.direction });
             }
         }
     };
 
     let mut window = RenderWindow::new(
         (WIDTH, HEIGHT),
-        "Rhythm Game",
-        Style::DEFAULT,
-        &Default::default(),
+        "Rhythm Game!",
+        Style::FULLSCREEN,
+        &Default::default()
     );
 
     // no v-sync to help with latency
@@ -342,6 +346,10 @@ fn main() {
     song.pause();
     song.set_playing_offset(Time::seconds(0.));
 
+    let mut last_60_frames:Vec<u128> = vec![];
+
+    let mut frame = 0;
+
     'draw_loop:
     loop {
         // see above for why we have a block here
@@ -405,103 +413,116 @@ fn main() {
                 text.set_fill_color(Color::WHITE);
                 text.set_position((0., 0.));
                 window.draw(&text);
-            }else{
+            }else {
                 state.game_time = (duration.as_micros()) as f64 / 1000f64 - (WARMUP_SECS * 1000) as f64 + (SECONDS_TO_SKIP * 1000) as f64;
-
-                // draw map keys
-                for map_key in &state.map {
-                    let mut rect = RectangleShape::new();
-                    let screen_time = (map_key.time - state.game_time) as f32;
-
-                    // screen_pos is the exact pixel that you want to "hit"
-                    let screen_pos = 0.00001f32 * SPEED * (HEIGHT as f32) * screen_time + SCREEN_OFFSET;
-
-
-                    let key_idx = map_key_disp_order.iter().position(|&r| r == map_key.direction).unwrap();
-                    let x = 100. + key_idx as f32 * 150.;
-
-                    for key_range in &height_and_saturation_map {
-                        // should be an even integer
-                        let rect_height = key_range.0;
-                        let mut saturation = key_range.1;
-                        let mut value = 1.0;
-
-                        if map_key.hit {
-                            // r = 255;
-                            // g = 255;
-                            // b = 255;
-                            saturation /= 2.;
-                            value /= 5.;
-                        }
-
-                        let (r, g, b) = hsv_to_rgb(((map_key.time as usize / 75) % 360) as u32, saturation, value);
-
-
-                        rect.set_fill_color(Color::rgb(r as u8, g as u8, b as u8));
-                        rect.set_position((x, (screen_pos as f32) - rect_height / 2.));
-                        rect.set_size((100f32, rect_height));
-                        window.draw(&rect);
-                    }
-                }
-
-                // draw key names & messages
-                for direction in &map_key_disp_order{
-                    let key_idx = map_key_disp_order.iter().position(|&r| r == *direction).unwrap();
-                    let x = 100. + key_idx as f32 * 150.;
-
-
-                    let mut y = 0;
-                    for message in &state.messages{
-                        if message.direction != *direction { continue; }
-
-                        let mut text = Text::new(&format!("{:?}", message.val), &font, MESSAGE_SIZE);
-
-                        text.set_fill_color(Color::WHITE);
-                        text.set_position((x, (y * MESSAGE_SIZE + 1) as f32));
-                        window.draw(&text);
-
-                        y += 1;
-                    }
-
-                    let mut text = Text::new(&format!("{:?}", direction), &font, 20);
-                    text.set_fill_color(Color::WHITE);
-                    text.set_position((x, 70.));
-                    window.draw(&text);
-                }
-
-                let mut hit_line = RectangleShape::new();
-                hit_line.set_position((0., SCREEN_OFFSET));
-                hit_line.set_size((WIDTH as f32, 1.));
-                hit_line.set_fill_color(Color::WHITE);
-                window.draw(&hit_line);
             }
 
-            // // draw height info
-            // let x = state.player.x / BLOCK_SIZE as f32;
-            // let y = state.player.y as f64 / BLOCK_SIZE as f64;
-            // let mut text = Text::new(&format!("X:{}\nY: {}\nDensity: {:.3}", x, y, density(y)), &font, 16);
-            // text.set_fill_color(Color::WHITE);
-            // text.set_position((0., 66.));
-            // window.draw(&text);
-            //
-            // let duration = start.elapsed();
-            //
-            let elapsed = last_frame.elapsed().as_millis();
+            // draw map keys
+            for map_key in &state.map {
+                let mut rect = RectangleShape::new();
+                let screen_time = (map_key.time - state.game_time) as f32;
 
-            let mut text = Text::new(&format!("{} FPS\nScore: {}", 1000u128 / max(elapsed, 1u128), state.score / 1000.), &font, 15);
-            text.set_fill_color(Color::WHITE);
-            text.set_position((700., 0.));
-            window.draw(&text);
+                // screen_pos is the exact pixel that you want to "hit"
+                let screen_pos = 0.00001f32 * SPEED * (HEIGHT as f32) * screen_time + SCREEN_OFFSET;
+
+
+                let key_idx = map_key_disp_order.iter().position(|&r| r == map_key.direction).unwrap();
+                let x = 100. + key_idx as f32 * 150.;
+
+                for key_range in &height_and_saturation_map {
+                    // should be an even integer
+                    let rect_height = key_range.0;
+                    let mut saturation = key_range.1;
+                    let mut value = 1.0;
+
+                    if map_key.hit {
+                        // r = 255;
+                        // g = 255;
+                        // b = 255;
+                        saturation /= 2.;
+                        value /= 5.;
+                    }
+
+                    let (r, g, b) = hsv_to_rgb(((map_key.time as usize / 75) % 360) as u32, saturation, value);
+
+
+                    rect.set_fill_color(Color::rgb(r as u8, g as u8, b as u8));
+                    rect.set_position((x, (screen_pos as f32) - rect_height / 2.));
+                    rect.set_size((100f32, rect_height));
+                    window.draw(&rect);
+                }
+            }
+
+            // draw key names & messages
+            for direction in &map_key_disp_order{
+                let key_idx = map_key_disp_order.iter().position(|&r| r == *direction).unwrap();
+                let x = 100. + key_idx as f32 * 150.;
+
+
+                let mut y = 0;
+                for message in &state.messages{
+                    if message.direction != *direction { continue; }
+
+                    let mut text = Text::new(&format!("{:?}", message.val), &font, MESSAGE_SIZE);
+
+                    text.set_fill_color(Color::WHITE);
+                    text.set_position((x, (y * MESSAGE_SIZE + 1) as f32));
+                    window.draw(&text);
+
+                    y += 1;
+                }
+
+                let mut text = Text::new(&format!("{:?}", direction), &font, 20);
+                text.set_fill_color(Color::WHITE);
+                text.set_position((x, 70.));
+                window.draw(&text);
+            }
+
+
+            {
+            let mut hit_line = RectangleShape::new();
+            hit_line.set_position((0., SCREEN_OFFSET));
+            hit_line.set_size((WIDTH as f32, 1.));
+            hit_line.set_fill_color(Color::WHITE);
+            window.draw(&hit_line);
+        }
+
+        // // draw height info
+        // let x = state.player.x / BLOCK_SIZE as f32;
+        // let y = state.player.y as f64 / BLOCK_SIZE as f64;
+        // let mut text = Text::new(&format!("X:{}\nY: {}\nDensity: {:.3}", x, y, density(y)), &font, 16);
+        // text.set_fill_color(Color::WHITE);
+        // text.set_position((0., 66.));
+        // window.draw(&text);
+        //
+        // let duration = start.elapsed();
+        //
+        let elapsed = last_frame.elapsed().as_millis();
+
+        let current_fps = 1000u128 / max(elapsed, 1u128);
+
+        if frame % 10 == 0 { last_60_frames.push(current_fps); }
+        if last_60_frames.len() > 60{
+            last_60_frames.remove(0);
+        }
+        let fps = last_60_frames.iter().sum::<u128>() as usize / last_60_frames.len();
+
+        let mut text = Text::new(&format!("{} FPS\nScore: {}", fps, state.score / 1000.), &font, 15);
+        text.set_fill_color(Color::WHITE);
+        text.set_position((700., 0.));
+        window.draw(&text);
 
             let mut c = state.messages.clone();
             c.retain(|message| state.game_time - message.time < MESSAGE_DURATION);
             state.messages = c;
-
-
-            // if duration.as_secs() >= GAME_SECONDS
-
-            last_frame = Instant::now();
         }
+
+
+        // if duration.as_secs() >= GAME_SECONDS
+
+        last_frame = Instant::now();
+
+        frame += 1;
 
         window.display();
     }
