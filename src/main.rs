@@ -24,6 +24,24 @@ enum KeyDirection{
 }
 
 #[derive(Debug, Copy, Clone)]
+struct Message{
+    val: MessageVal,
+    direction: KeyDirection,
+    time: f64
+}
+
+#[derive(Debug, Copy, Clone)]
+enum MessageVal {
+    Perfect,
+    Fantastic,
+    Excellent,
+    Great,
+    Good,
+    Mediocre,
+    Awful
+}
+
+#[derive(Debug, Copy, Clone)]
 struct MapKey{
     direction: KeyDirection,
     time: f64,
@@ -42,6 +60,7 @@ struct KeysPressed{
 struct State{
     keys: KeysPressed,
     map: Vec<MapKey>,
+    messages: Vec<Message>,
     game_time: f64,
     score: f64,
     quit: bool,
@@ -55,8 +74,9 @@ const SCREEN_OFFSET:f32 = 100f32;
 const MAX_KEY_ERROR:f64 = 250f64;
 const WARMUP_SECS:i32 = 1;
 const RECORD:bool = true;
-const SKIP:u64 = 145;
-
+const SECONDS_TO_SKIP:u64 = 0;
+const MESSAGE_SIZE:u32   = 20;
+const MESSAGE_DURATION:f64 = 250.;
 
 /**
 * h is [0, 360]
@@ -91,6 +111,13 @@ fn main() {
     // let height_and_saturation_map: Vec<(f32, f32)> = vec![(45f32, 0.25), (20f32, 0.5), (4f32, 1.)];
     let height_and_saturation_map: Vec<(f32, f32)> = vec![(30f32, 0.25), (20f32, 0.5), (4f32, 1.)];
     let map_key_disp_order: Vec<KeyDirection> = vec![KeyDirection::Left, KeyDirection::Down, KeyDirection::Up, KeyDirection::Right];
+    let messages_order = [MessageVal::Perfect, MessageVal::Fantastic, MessageVal::Excellent, MessageVal::Great, MessageVal::Good, MessageVal::Mediocre, MessageVal::Awful];
+
+    let delay_to_message_val = move |delay:f64| -> MessageVal {
+        let delay_ratio = (delay.abs() / MAX_KEY_ERROR * (messages_order.len() - 1) as f64).ceil();
+
+        messages_order[delay_ratio as usize]
+    };
 
     let physics = move|state: &mut State| -> () {
         let game_time = state.game_time as f64;
@@ -102,26 +129,28 @@ fn main() {
             if !state.map.is_empty(){
                 let mut hit_key_opt = None;
                 let mut lowest_abs = f64::INFINITY;
+                let error;
                 for map_key in &mut state.map {
                     let abs = (map_key.time - game_time).abs();
-                    // println!("{}: {}", abs, map_key.time);
                     if !map_key.hit && map_key.direction == dir && abs < lowest_abs && abs < MAX_KEY_ERROR {
                         hit_key_opt = Some(map_key);
                         lowest_abs = abs;
                     }
                 }
 
+                // hit a key
                 if let Some(hit_key) = hit_key_opt {
-                    // &state.map.sort_unstable_by(|a, b| (game_time - a.time).abs().partial_cmp(&(game_time - b.time).abs()).unwrap());
-                    // let first_key = state.map.first_mut().unwrap();
                     hit_key.hit = true;
-                    let error = hit_key.time - game_time;
+                    error = hit_key.time - game_time;
 
-                    state.score += error;
+                    state.score += error.abs();
                 }else{
                     // you didn't hit anything
-                    state.score += MAX_KEY_ERROR;
+                    error = MAX_KEY_ERROR;
+                    state.score += error.abs();
                 }
+
+                state.messages.push(Message{ val: delay_to_message_val(error), time: state.game_time, direction: dir });
             }
         };
 
@@ -152,6 +181,7 @@ fn main() {
             state.keys.right = false;
         }
 
+        // entirely missed a key
         for map_key in &mut state.map {
             let mut error = map_key.time - state.game_time;
             if !map_key.hit && -error > MAX_KEY_ERROR {
@@ -161,8 +191,7 @@ fn main() {
 
                 state.score += error;
 
-
-                // println!("added MAX error: {}", error * error);
+                state.messages.push(Message{ val: delay_to_message_val(error), time: state.game_time, direction: map_key.direction });
             }
         }
     };
@@ -196,6 +225,7 @@ fn main() {
             left: false,
             right: false
         },
+        messages: vec![],
         map: vec![
             // MapKey{ direction: KeyDirection::Up, time: 1000f64, hit: false },
             // MapKey{ direction: KeyDirection::Down, time: 1250f64, hit: false },
@@ -366,7 +396,7 @@ fn main() {
 
             if state.paused && duration.as_secs() >= WARMUP_SECS as u64 {
                 state.paused = false;
-                song.set_playing_offset(Time::seconds(SKIP as f32));
+                song.set_playing_offset(Time::seconds(SECONDS_TO_SKIP as f32));
                 song.play();
             }
 
@@ -376,13 +406,7 @@ fn main() {
                 text.set_position((0., 0.));
                 window.draw(&text);
             }else{
-                state.game_time = (duration.as_micros()) as f64 / 1000f64 - (WARMUP_SECS * 1000) as f64 + (SKIP * 1000) as f64;
-
-                let mut hit_line = RectangleShape::new();
-                hit_line.set_position((0., SCREEN_OFFSET));
-                hit_line.set_size((WIDTH as f32, 1.));
-                hit_line.set_fill_color(Color::WHITE);
-                window.draw(&hit_line);
+                state.game_time = (duration.as_micros()) as f64 / 1000f64 - (WARMUP_SECS * 1000) as f64 + (SECONDS_TO_SKIP * 1000) as f64;
 
                 // draw map keys
                 for map_key in &state.map {
@@ -407,7 +431,7 @@ fn main() {
                             // g = 255;
                             // b = 255;
                             saturation /= 2.;
-                            value /= 10.;
+                            value /= 5.;
                         }
 
                         let (r, g, b) = hsv_to_rgb(((map_key.time as usize / 75) % 360) as u32, saturation, value);
@@ -420,15 +444,36 @@ fn main() {
                     }
                 }
 
+                // draw key names & messages
                 for direction in &map_key_disp_order{
                     let key_idx = map_key_disp_order.iter().position(|&r| r == *direction).unwrap();
                     let x = 100. + key_idx as f32 * 150.;
 
-                    let mut text = Text::new(&format!("{:?}", direction), &font, 15);
+
+                    let mut y = 0;
+                    for message in &state.messages{
+                        if message.direction != *direction { continue; }
+
+                        let mut text = Text::new(&format!("{:?}", message.val), &font, MESSAGE_SIZE);
+
+                        text.set_fill_color(Color::WHITE);
+                        text.set_position((x, (y * MESSAGE_SIZE + 1) as f32));
+                        window.draw(&text);
+
+                        y += 1;
+                    }
+
+                    let mut text = Text::new(&format!("{:?}", direction), &font, 20);
                     text.set_fill_color(Color::WHITE);
-                    text.set_position((x, 50.));
+                    text.set_position((x, 70.));
                     window.draw(&text);
                 }
+
+                let mut hit_line = RectangleShape::new();
+                hit_line.set_position((0., SCREEN_OFFSET));
+                hit_line.set_size((WIDTH as f32, 1.));
+                hit_line.set_fill_color(Color::WHITE);
+                window.draw(&hit_line);
             }
 
             // // draw height info
@@ -445,8 +490,12 @@ fn main() {
 
             let mut text = Text::new(&format!("{} FPS\nScore: {}", 1000u128 / max(elapsed, 1u128), state.score / 1000.), &font, 15);
             text.set_fill_color(Color::WHITE);
-            text.set_position((0., 0.));
+            text.set_position((700., 0.));
             window.draw(&text);
+
+            let mut c = state.messages.clone();
+            c.retain(|message| state.game_time - message.time < MESSAGE_DURATION);
+            state.messages = c;
 
 
             // if duration.as_secs() >= GAME_SECONDS
