@@ -1,19 +1,26 @@
 // TODOs:
-// - support resizing
-// - fix bug where later keys are prioritized
-//
+// - extract function to convert time to screen height
+// - add a screen-height of pre-scroll instead of a countdown
+// - support holds (2 to 3)
+// - change scroll direction option
+// - user-configured delay and constants
 
+
+use sfml::system::Vector2;
 use sfml::{
     graphics::{Color, RenderTarget, RenderWindow, Shape},
     window::{Event, Key, Style},
 };
-use sfml::graphics::{RectangleShape, Transformable, Text, Font};
+use std::fs;
+use sfml::graphics::{RectangleShape, Transformable, Text, Font, View};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::sync::{Arc, Mutex};
 use std::cmp::max;
 use sfml::audio::{SoundBuffer, Sound};
 use sfml::system::Time;
+use std::collections::HashMap;
+use std::str::Chars;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum KeyDirection{
@@ -70,14 +77,19 @@ struct State{
 
 const WIDTH:u32 = 1920;
 const HEIGHT:u32 = 1080;
-const SPEED:f32 = 20f32;
+const SCROLL_SPEED:f32 = 80f32;
 const SCREEN_OFFSET:f32 = 100f32;
 const MAX_KEY_ERROR:f64 = 250f64;
 const WARMUP_SECS:i32 = 3;
 const RECORD:bool = false;
+const DISABLE_EARLY_PENALTY:bool = true;
 const SECONDS_TO_SKIP:u64 = 0;
-const MESSAGE_SIZE:u32   = 20;
+const MESSAGE_SIZE:u32 = 20;
 const MESSAGE_DURATION:f64 = 250.;
+
+// set this to a higher value to make the notes appear earlier
+// set higher if your audio has a lot of delay
+const AUDIO_LATENCY_OFFSET:f64 = 0.;
 
 /**
 * h is [0, 360]
@@ -108,7 +120,197 @@ fn hsv_to_rgb(h : u32, s : f32, v : f32) -> (u32, u32, u32) {
     return (r.round() as u32, g.round() as u32, b.round() as u32);
 }
 
+fn sm_to_keys(str: String) -> Vec<MapKey> {
+    let map_key_disp_order: Vec<KeyDirection> = vec![KeyDirection::Left, KeyDirection::Down, KeyDirection::Up, KeyDirection::Right];
+    let mut keys:Vec<MapKey> = vec![];
+
+    // maps measure to BPM
+    let mut bpms_map = HashMap::new();
+    let mut bpms_str = String::new();
+    let mut bpms_on = false;
+
+
+    let mut measure = 0;
+    let mut current_beat = 0;
+    let mut current_bpm = 0.;
+
+    let mut measure_string = String::new();
+    let mut current_time:f64 = 0.;
+
+
+
+    let mut is_note_section = false;
+    for line in str.split("\r\n"){
+        let num_line = line.starts_with('0') || line.starts_with('1') || line.starts_with('2') || line.starts_with('3');
+
+        if line.starts_with("//") { continue }
+
+        if line.starts_with("#") {
+            let split:Vec<&str> = line.split(":").collect();
+            let key = split[0];
+            let value = split[1];
+
+            if key == "#BPMS"{
+                bpms_str += value;
+                bpms_on = true;
+            }else if bpms_on{
+                bpms_on = false;
+
+                let bpms_split:Vec<&str> = bpms_str[0..bpms_str.len() - 2].split(",").collect();
+                for bpm_bit in bpms_split {
+                    let measure_and_bpm:Vec<&str> = bpm_bit.split('=').collect();
+                    let measure = measure_and_bpm[0];
+                    let mut bpm = measure_and_bpm[1];
+                    // let mut bpm_box = String::from(bpm);
+                    // if bpm.ends_with(";") {
+                    //     bpm_box.pop();
+                    //     bpm = bpm_box.as_str();
+                    // }
+                    println!("{}", bpm);
+                    bpms_map.insert(measure.parse::<usize>().unwrap(), bpm.parse::<f64>().unwrap());
+                }
+            }
+        }else if bpms_on{
+            bpms_str += line;
+        }
+
+        if !is_note_section && num_line {
+            is_note_section = true;
+        }
+
+
+        // println!("line {}", line);
+        if line.starts_with(","){
+            let measure_vec:Vec<&str> = measure_string.split("\n").collect();
+            let notes_in_measure = measure_vec.len();
+
+            let mut note_in_measure:isize = -1;
+
+            for measure_line in measure_vec {
+                if ((note_in_measure as f64) / (notes_in_measure as f64 * 4.)) % 1. == 0.{
+                    current_beat += 1;
+                }
+
+                println!(" current beat : {}", current_beat);
+                // println!("string {:#?}", bpms_str);
+                match bpms_map.get(&(current_beat as usize)) {
+                    None => {}
+                    Some(bpm) => {
+                        current_bpm = *bpm;
+                    }
+                }
+
+                let current_beat_duration = 60f64 / current_bpm;
+
+                println!("measure line {}", measure_line);
+
+                let split: Chars = measure_line.chars();
+
+                let mut i = 0;
+
+                // for each column...
+                for num in split{
+                    match num{
+                        '0' => {},
+                        '1' => {
+                            keys.push(MapKey{
+                                direction: map_key_disp_order[i],
+                                time: current_time * 1000.,
+                                hit: false
+                            })
+                        }
+                        '2' => {
+                            keys.push(MapKey{
+                                direction: map_key_disp_order[i],
+                                time: current_time * 1000.,
+                                hit: false
+                            })},
+                        '3' => {},
+                        'M' => {},
+                        _ => {panic!("Unknown number ".to_owned() + measure_line)},
+                    }
+
+                    i += 1;
+                }
+
+                current_time += current_beat_duration / (notes_in_measure as f64 / 4.);
+
+                note_in_measure += 1;
+            }
+
+            measure_string = String::new();
+
+            measure += 1;
+        }
+
+        if num_line{
+            // println!("adding num line {}", line);
+            measure_string += &*(line.to_owned() + "\n");
+        }
+
+
+    }
+    keys
+}
+
+fn convert_to_csv(keys: &Vec<MapKey>){
+    let mut keys = keys.clone();
+    let mut data = String::from("Time\tDirection\n");
+    keys.sort_by(|a, b| (&a.time).partial_cmp(&b.time).unwrap());
+    for key in keys{
+        let key_direction = match key.direction{
+            KeyDirection::Up => "U",
+            KeyDirection::Down => "D",
+            KeyDirection::Left => "L",
+            KeyDirection::Right => "R"
+        };
+
+        data += &*format!("{}\t{}\n", key.time, key_direction);
+    }
+    fs::write("converted-maps/Journey - Don't Stop Believin'.csv", data).unwrap();
+}
+
+fn csv_to_keys(str: String) -> Vec<MapKey>{
+    let mut res:Vec<MapKey> = vec![];
+    if str.starts_with("Time\tDirection\n"){
+        for line in str.split("\n").skip(1){
+            if line == "" { continue; }
+
+            let split:Vec<&str> = line.split("\t").collect();
+            if split.len() != 2 {
+                panic!("Invalid file");
+            }
+
+            let time = split[0];
+            let direction = split[1];
+
+            res.push(MapKey{
+                direction: match direction {
+                    "U" => KeyDirection::Up,
+                    "D" => KeyDirection::Down,
+                    "L" => KeyDirection::Left,
+                    "R" => KeyDirection::Right,
+                    _ => { panic!("Invalid key ".to_owned() + direction); }
+                },
+                time: time.parse().unwrap(),
+                hit: false
+            });
+        }
+    }else{
+        panic!("Invalid file");
+    }
+
+    res
+}
+
 fn main() {
+    // println!("{:?}", sm_to_keys(fs::read_to_string("src/resources/map/map.sm").unwrap()));
+
+    // csv_to_keys("Time\tDirection\n10\tU\n13\tD\n20\tU\n".parse().unwrap());
+
+    let mut width = WIDTH;
+    let mut height = HEIGHT;
+
     // let height_and_saturation_map: Vec<(f32, f32)> = vec![(45f32, 0.25), (20f32, 0.5), (4f32, 1.)];
     let height_and_saturation_map: Vec<(f32, f32)> = vec![(30f32, 0.25), (20f32, 0.5), (4f32, 1.)];
     let map_key_disp_order: Vec<KeyDirection> = vec![KeyDirection::Left, KeyDirection::Down, KeyDirection::Up, KeyDirection::Right];
@@ -149,10 +351,12 @@ fn main() {
                     state.messages.push(Message{ val: delay_to_message_val(error), time: state.game_time, direction: dir });
                 }else{
                     // you didn't hit anything
-                    error = MAX_KEY_ERROR;
-                    state.score += error.abs();
+                    if !DISABLE_EARLY_PENALTY {
+                        error = MAX_KEY_ERROR;
+                        state.score += error.abs();
 
-                    state.messages.push(Message{ val: MessageVal::Miss, time: state.game_time, direction: dir });
+                        state.messages.push(Message{ val: MessageVal::Miss, time: state.game_time, direction: dir });
+                    }
                 }
 
             }
@@ -201,11 +405,13 @@ fn main() {
     };
 
     let mut window = RenderWindow::new(
-        (WIDTH, HEIGHT),
+        (width, height),
         "Rhythm Game!",
-        Style::FULLSCREEN,
+        Style::RESIZE,
         &Default::default()
     );
+
+    // window.set_position(Vector2::from((1024, 0)));
 
     // no v-sync to help with latency
     window.set_vertical_sync_enabled(false);
@@ -219,7 +425,7 @@ fn main() {
     let font = Font::from_memory(include_bytes!("resources/sansation.ttf")).unwrap();
 
     // supports ogg, wav, flac, aiff, au, raw, paf, svx, nist, voc, ircam, w64, mat4, mat5 pvf, htk, sds, avr, sd2, caf, wve, mpc2k, rf64, see https://docs.rs/sfml/0.14.0/sfml/audio/struct.SoundBuffer.html
-    let song_buffer = SoundBuffer::from_memory(include_bytes!("resources/song.ogg")).unwrap();
+    let song_buffer = SoundBuffer::from_memory(include_bytes!("resources/map/map.ogg")).unwrap();
     let mut song = Sound::with_buffer(&song_buffer);
 
     let mut state = State{
@@ -230,25 +436,14 @@ fn main() {
             right: false
         },
         messages: vec![],
-        map: vec![
-            // MapKey{ direction: KeyDirection::Up, time: 1000f64, hit: false },
-            // MapKey{ direction: KeyDirection::Down, time: 1250f64, hit: false },
-            // MapKey{ direction: KeyDirection::Left, time: 1500f64, hit: false },
-            // MapKey{ direction: KeyDirection::Right, time: 1750f64, hit: false },
-            // // MapKey{ direction: KeyDirection::Up, time: 2000f64, hit: false },
-            // // MapKey{ direction: KeyDirection::Up, time: 3000f64, hit: false },
-            // // MapKey{ direction: KeyDirection::Up, time: 4000f64, hit: false },
-            // // MapKey{ direction: KeyDirection::Up, time: 5000f64, hit: false },
-            // // MapKey{ direction: KeyDirection::Up, time: 6000f64, hit: false },
-            // // MapKey{ direction: KeyDirection::Up, time: 7000f64, hit: false },
-            // // MapKey{ direction: KeyDirection::Up, time: 8000f64, hit: false },
-        ],
+        map: sm_to_keys(fs::read_to_string("src/resources/map/map.sm").unwrap()),
         score: 0f64,
-        game_time: 0f64,
+        game_time: AUDIO_LATENCY_OFFSET,
         quit: false,
         paused: true
     };
 
+    /*
     let bpm = 60.;
     let bps = bpm / 60.;
     let spb = 1. / bps;
@@ -308,7 +503,9 @@ fn main() {
         state.map.push(MapKey{ direction: KeyDirection::Down, time, hit: false });
         state.map.push(MapKey{ direction: KeyDirection::Right, time, hit: false });
     }
-
+*/
+    // convert_to_csv(&state.map);
+    // state.map = csv_to_keys(fs::read_to_string("converted-maps/Journey - Don't Stop Believin'.csv").unwrap());
 
     // not completely sure how Arc<Mutex<T>> works but it does work
     // see https://doc.rust-lang.org/book/ch16-03-shared-state.html
@@ -394,6 +591,12 @@ fn main() {
                     Event::KeyReleased {
                         code: Key::Right, ..
                     } => state.keys.right = false,
+
+                    Event::Resized {width: new_width, height: new_height} => {
+                        width = new_width;
+                        height = new_height;
+                        window.set_view(&*View::new(Vector2::from((width as f32 / 2., height as f32 / 2.)), Vector2::from((width as f32, height as f32))));
+                    },
                     _ => {}
                 }
             }
@@ -414,7 +617,7 @@ fn main() {
                 text.set_position((0., 0.));
                 window.draw(&text);
             }else {
-                state.game_time = (duration.as_micros()) as f64 / 1000f64 - (WARMUP_SECS * 1000) as f64 + (SECONDS_TO_SKIP * 1000) as f64;
+                state.game_time = (duration.as_micros()) as f64 / 1000f64 - (WARMUP_SECS * 1000) as f64 + (SECONDS_TO_SKIP * 1000) as f64 + AUDIO_LATENCY_OFFSET;
             }
 
             // draw map keys
@@ -423,7 +626,7 @@ fn main() {
                 let screen_time = (map_key.time - state.game_time) as f32;
 
                 // screen_pos is the exact pixel that you want to "hit"
-                let screen_pos = 0.00001f32 * SPEED * (HEIGHT as f32) * screen_time + SCREEN_OFFSET;
+                let screen_pos = 0.00001f32 * SCROLL_SPEED * (height as f32) * screen_time + SCREEN_OFFSET;
 
 
                 let key_idx = map_key_disp_order.iter().position(|&r| r == map_key.direction).unwrap();
@@ -440,7 +643,7 @@ fn main() {
                         // g = 255;
                         // b = 255;
                         saturation /= 2.;
-                        value /= 5.;
+                        value = 0.;
                     }
 
                     let (r, g, b) = hsv_to_rgb(((map_key.time as usize / 75) % 360) as u32, saturation, value);
@@ -482,7 +685,7 @@ fn main() {
             {
             let mut hit_line = RectangleShape::new();
             hit_line.set_position((0., SCREEN_OFFSET));
-            hit_line.set_size((WIDTH as f32, 1.));
+            hit_line.set_size((width as f32, 1.));
             hit_line.set_fill_color(Color::WHITE);
             window.draw(&hit_line);
         }
