@@ -1,5 +1,4 @@
 // TODOs:
-// - extract function to convert time to screen height
 // - add a screen-height of pre-scroll instead of a countdown
 // - support holds (2 to 3)
 // - change scroll direction option
@@ -17,11 +16,10 @@ use std::time::{Duration, Instant};
 use sfml::{
     graphics::{Color, RenderTarget, RenderWindow, Shape},
     window::{Event, Key, Style},
+    audio::{Sound, SoundBuffer},
+    graphics::{Font, RectangleShape, Text, Transformable, View},
+    system::{Time, Vector2}
 };
-use sfml::audio::{Sound, SoundBuffer};
-use sfml::graphics::{Font, RectangleShape, Text, Transformable, View};
-use sfml::system::Time;
-use sfml::system::Vector2;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum KeyDirection {
@@ -76,21 +74,54 @@ struct State {
     paused: bool,
 }
 
+// default height
 const WIDTH: u32 = 1920;
 const HEIGHT: u32 = 1080;
+
+// "visual BPM", how fast the notes scroll
+// does not impact actual song speed
 const SCROLL_SPEED: f32 = 80f32;
+
+// height of the line, ie how many pixels you should hit the note at
 const SCREEN_OFFSET: f32 = 100f32;
-const MAX_KEY_ERROR: f64 = 250f64;
-const WARMUP_SECS: i32 = 3;
+
+// value in ms
+// set this high if you tend to hit too early
+// set this low if you tend to hit too late
+const KEY_DELAY:f32 = 0f32;
+
+// how many seconds of warmup you get
+const WARMUP_SECS: i32 = 1;
+
+// echos keys to the console when you press them
 const RECORD: bool = false;
-const DISABLE_EARLY_PENALTY: bool = true;
+
+// how many ms you can be off for a key to register as a hit
+// if you are more than this late then it will register as a miss
+const KEY_ERROR_RANGE: f64 = 250f64;
+
+// disables the penalty for hitting a key when there is no note within [-KEY_ERROR_RANGE, KEY_ERROR_RANGE]
+const DISABLE_MISS_PENALTY: bool = true;
+
+// skip this many seconds into the song
+// moves both note track and audio
 const SECONDS_TO_SKIP: u64 = 0;
+
+// font size of messages
 const MESSAGE_SIZE: u32 = 20;
+
+// how long a message stays on the screen
 const MESSAGE_DURATION: f64 = 250.;
 
-// set this to a higher value to make the notes appear earlier
-// set higher if your audio has a lot of delay
+// how many pixels a note needs to be offscreen to avoid it being rendered
+const NO_RENDER_BUFFER:u32 = 50;
+
+// how many ms to add to the game clock
+// a higher value means notes come in earlier
 const AUDIO_LATENCY_OFFSET: f64 = 0.;
+
+// why would you do this
+const ENABLE_KEY_REPEAT:bool = false;
 
 /**
 * h is [0, 360]
@@ -160,7 +191,7 @@ fn sm_to_keys(str: String) -> Vec<MapKey> {
                 for bpm_bit in bpms_split {
                     let measure_and_bpm: Vec<&str> = bpm_bit.split('=').collect();
                     let measure = measure_and_bpm[0];
-                    let mut bpm = measure_and_bpm[1];
+                    let bpm = measure_and_bpm[1];
                     // let mut bpm_box = String::from(bpm);
                     // if bpm.ends_with(";") {
                     //     bpm_box.pop();
@@ -302,10 +333,12 @@ fn csv_to_keys(str: String) -> Vec<MapKey> {
     res
 }
 
+fn get_screen_height(time:f32, height_of_screen: u32) -> f32 {
+    return 0.00001f32 * SCROLL_SPEED * (height_of_screen as f32) * (time + KEY_DELAY) + SCREEN_OFFSET;
+}
+
 fn main() {
     // println!("{:?}", sm_to_keys(fs::read_to_string("src/resources/map/map.sm").unwrap()));
-
-    // csv_to_keys("Time\tDirection\n10\tU\n13\tD\n20\tU\n".parse().unwrap());
 
     let mut width = WIDTH;
     let mut height = HEIGHT;
@@ -316,7 +349,7 @@ fn main() {
     let messages_order = [MessageVal::Perfect, MessageVal::Fantastic, MessageVal::Excellent, MessageVal::Great, MessageVal::Good, MessageVal::Mediocre, MessageVal::Awful];
 
     let delay_to_message_val = move |delay: f64| -> MessageVal {
-        let delay_ratio = (delay.abs() / MAX_KEY_ERROR * (messages_order.len() - 1) as f64).ceil();
+        let delay_ratio = (delay.abs() / KEY_ERROR_RANGE * (messages_order.len() - 1) as f64).ceil();
 
         messages_order[delay_ratio as usize]
     };
@@ -334,7 +367,7 @@ fn main() {
                 let error;
                 for map_key in &mut state.map {
                     let abs = (map_key.time - game_time).abs();
-                    if !map_key.hit && map_key.direction == dir && abs < lowest_abs && abs < MAX_KEY_ERROR {
+                    if !map_key.hit && map_key.direction == dir && abs < lowest_abs && abs < KEY_ERROR_RANGE {
                         hit_key_opt = Some(map_key);
                         lowest_abs = abs;
                     }
@@ -350,8 +383,8 @@ fn main() {
                     state.messages.push(Message { val: delay_to_message_val(error), time: state.game_time, direction: dir });
                 } else {
                     // you didn't hit anything
-                    if !DISABLE_EARLY_PENALTY {
-                        error = MAX_KEY_ERROR;
+                    if !DISABLE_MISS_PENALTY {
+                        error = KEY_ERROR_RANGE;
                         state.score += error.abs();
 
                         state.messages.push(Message { val: MessageVal::Miss, time: state.game_time, direction: dir });
@@ -390,10 +423,10 @@ fn main() {
         // entirely missed a key
         for map_key in &mut state.map {
             let mut error = map_key.time - state.game_time;
-            if !map_key.hit && -error > MAX_KEY_ERROR {
+            if !map_key.hit && -error > KEY_ERROR_RANGE {
                 map_key.hit = true;
 
-                error = MAX_KEY_ERROR;
+                error = KEY_ERROR_RANGE;
 
                 state.score += error;
 
@@ -414,7 +447,7 @@ fn main() {
     // no v-sync to help with latency
     window.set_vertical_sync_enabled(false);
     window.set_mouse_cursor_visible(false);
-    window.set_key_repeat_enabled(false);
+    window.set_key_repeat_enabled(ENABLE_KEY_REPEAT);
 
 
     // include_bytes! builds this font into our executable, meaning that we do not need to bring
@@ -423,10 +456,10 @@ fn main() {
     let font = Font::from_memory(include_bytes!("resources/sansation.ttf")).unwrap();
 
     // supports ogg, wav, flac, aiff, au, raw, paf, svx, nist, voc, ircam, w64, mat4, mat5 pvf, htk, sds, avr, sd2, caf, wve, mpc2k, rf64, see https://docs.rs/sfml/0.14.0/sfml/audio/struct.SoundBuffer.html
-    let song_buffer = SoundBuffer::from_memory(include_bytes!("resources/map/map.ogg")).unwrap();
+    let song_buffer = SoundBuffer::from_memory(include_bytes!("resources/song.ogg")).unwrap();
     let mut song = Sound::with_buffer(&song_buffer);
 
-    let mut state = State {
+    let state = State {
         keys: KeysPressed {
             up: false,
             down: false,
@@ -434,7 +467,7 @@ fn main() {
             right: false,
         },
         messages: vec![],
-        map: sm_to_keys(fs::read_to_string("src/resources/map/map.sm").unwrap()),
+        map: csv_to_keys(fs::read_to_string("converted-maps/Journey - Don't Stop Believin'.csv").unwrap()),
         score: 0f64,
         game_time: AUDIO_LATENCY_OFFSET,
         quit: false,
@@ -549,6 +582,7 @@ fn main() {
     loop {
         // see above for why we have a block here
         {
+
             let our_state_holder = Arc::clone(&state_holder);
             let mut state_guard = our_state_holder.lock().unwrap();
 
@@ -603,32 +637,39 @@ fn main() {
 
             let duration = start.elapsed();
 
+            // pause timer
+            if state.paused {
+                let mut text = Text::new(&format!("{}", WARMUP_SECS as u64 - duration.as_secs()), &font, 100);
+                text.set_fill_color(Color::WHITE);
+                text.set_position((0., 0.));
+                window.draw(&text);
+            } else {
+                // set the time
+                state.game_time = (duration.as_micros()) as f64 / 1000f64 - (WARMUP_SECS * 1000) as f64 + (SECONDS_TO_SKIP * 1000) as f64 + AUDIO_LATENCY_OFFSET;
+            }
+
+            // unpause once the timer runs out
             if state.paused && duration.as_secs() >= WARMUP_SECS as u64 {
                 state.paused = false;
                 song.set_playing_offset(Time::seconds(SECONDS_TO_SKIP as f32));
                 song.play();
             }
 
-            if state.paused {
-                let mut text = Text::new(&format!("{}", 3 - duration.as_secs()), &font, 100);
-                text.set_fill_color(Color::WHITE);
-                text.set_position((0., 0.));
-                window.draw(&text);
-            } else {
-                state.game_time = (duration.as_micros()) as f64 / 1000f64 - (WARMUP_SECS * 1000) as f64 + (SECONDS_TO_SKIP * 1000) as f64 + AUDIO_LATENCY_OFFSET;
-            }
-
             // draw map keys
             for map_key in &state.map {
+
                 let mut rect = RectangleShape::new();
                 let screen_time = (map_key.time - state.game_time) as f32;
 
                 // screen_pos is the exact pixel that you want to "hit"
-                let screen_pos = 0.00001f32 * SCROLL_SPEED * (height as f32) * screen_time + SCREEN_OFFSET;
+                let screen_pos = get_screen_height(screen_time, height);// 0.00001f32 * SCROLL_SPEED * (height as f32) * screen_time + SCREEN_OFFSET;
 
+                // if the key is definately not on the screen, we can quit right now
+                if screen_pos < NO_RENDER_BUFFER as f32 || screen_pos > (HEIGHT + NO_RENDER_BUFFER) as f32 { continue; }
 
                 let key_idx = map_key_disp_order.iter().position(|&r| r == map_key.direction).unwrap();
                 let x = 100. + key_idx as f32 * 150.;
+
 
                 for key_range in &height_and_saturation_map {
                     // should be an even integer
@@ -646,12 +687,13 @@ fn main() {
 
                     let (r, g, b) = hsv_to_rgb(((map_key.time as usize / 75) % 360) as u32, saturation, value);
 
-
                     rect.set_fill_color(Color::rgb(r as u8, g as u8, b as u8));
                     rect.set_position((x, (screen_pos as f32) - rect_height / 2.));
+
                     rect.set_size((100f32, rect_height));
                     window.draw(&rect);
                 }
+
             }
 
             // draw key names & messages
@@ -678,7 +720,6 @@ fn main() {
                 text.set_position((x, 70.));
                 window.draw(&text);
             }
-
 
             {
                 let mut hit_line = RectangleShape::new();
