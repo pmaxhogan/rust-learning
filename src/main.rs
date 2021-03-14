@@ -98,7 +98,7 @@ const RECORD: bool = false;
 
 // how many ms you can be off for a key to register as a hit
 // if you are more than this late then it will register as a miss
-const KEY_ERROR_RANGE: f64 = 250f64;
+const KEY_ERROR_RANGE: f64 = 150f64;
 
 // disables the penalty for hitting a key when there is no note within [-KEY_ERROR_RANGE, KEY_ERROR_RANGE]
 const DISABLE_MISS_PENALTY: bool = true;
@@ -300,7 +300,7 @@ fn convert_to_csv(keys: &Vec<MapKey>) {
 
         data += &*format!("{}\t{}\n", key.time, key_direction);
     }
-    fs::write("converted-maps/Journey - Don't Stop Believin'.csv", data).unwrap();
+    fs::write("converted-maps/map.csv", data).unwrap();
 }
 
 fn csv_to_keys(str: String) -> Vec<MapKey> {
@@ -355,6 +355,72 @@ fn fade_in_out(time: f64) -> f64{
     }
 
     (1.5 - 2.7 * (time - 0.5).abs()).min(1.)
+}
+
+struct MapLoadResult{
+    keys: Vec<MapKey>,
+    song: String
+}
+
+fn load_map_folder(folder: &str) -> Result<MapLoadResult, String> {
+    let mut song = None;
+    let mut keys = None;
+    let read = fs::read_dir(folder);
+
+    match read {
+        Ok(entries) => {
+            for entry in entries {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    return Err("Folder should not contain directories".to_string());
+                } else {
+                    match path.extension() {
+                        Some(ext) => {
+                            match ext.to_str().unwrap() {
+                                "ogg" => {
+                                    song = Some(path.to_str().unwrap().to_string());
+                                },
+                                "sm" => {
+                                    if keys.is_some() {
+                                        return Err("Cannot have two map files in directory".parse().unwrap());
+                                    }
+
+                                    if let Ok(str) = fs::read_to_string(path) {
+                                        keys = Some(sm_to_keys(str));
+                                    }
+                                },
+                                "csv" => {
+                                    if keys.is_some() {
+                                        return Err("Cannot have two map files in directory".parse().unwrap());
+                                    }
+
+                                    if let Ok(str) = fs::read_to_string(path) {
+                                        keys = Some(csv_to_keys(str));
+                                    }
+                                },
+                                // TODO: implement this
+                                // "png" => { ... display the png somehow ... }
+                                _ => {}
+                            }
+                        }
+                        None => {}
+                    }
+                }
+            }
+
+            if keys.is_some() && song.is_some() {
+                Ok(MapLoadResult {
+                    keys: keys.unwrap(),
+                    song: song.unwrap().parse().unwrap()
+                })
+            } else {
+                Err("Did not find song and map in folder!".parse().unwrap())
+            }
+        },
+        Err(e) => {
+            Err(e.to_string())
+        }
+    }
 }
 
 fn main() {
@@ -475,9 +541,7 @@ fn main() {
     // we unwrap because it should crash if the font isn't there (a bug)
     let font = Font::from_memory(include_bytes!("resources/sansation.ttf")).unwrap();
 
-    // supports ogg, wav, flac, aiff, au, raw, paf, svx, nist, voc, ircam, w64, mat4, mat5 pvf, htk, sds, avr, sd2, caf, wve, mpc2k, rf64, see https://docs.rs/sfml/0.14.0/sfml/audio/struct.SoundBuffer.html
-    let song_buffer = SoundBuffer::from_memory(include_bytes!("resources/song.ogg")).unwrap();
-    let mut song = Sound::with_buffer(&song_buffer);
+    let folder_result = load_map_folder("src/resources/Journey - Don't Stop Believin'/").unwrap();
 
     let state = State {
         keys: KeysPressed {
@@ -487,13 +551,18 @@ fn main() {
             right: false,
         },
         messages: vec![],
-        map: csv_to_keys(fs::read_to_string("converted-maps/Journey - Don't Stop Believin'.csv").unwrap()),
+        map: folder_result.keys,
         score: 0f64,
         game_time: AUDIO_LATENCY_OFFSET,
         quit: false,
         paused: true,
         song_playing: false
     };
+
+
+    // supports ogg, wav, flac, aiff, au, raw, paf, svx, nist, voc, ircam, w64, mat4, mat5 pvf, htk, sds, avr, sd2, caf, wve, mpc2k, rf64, see https://docs.rs/sfml/0.14.0/sfml/audio/struct.SoundBuffer.html
+    let song_buffer = SoundBuffer::from_file(&folder_result.song).unwrap();
+    let mut song = Sound::with_buffer(&song_buffer);
 
     /*
     let bpm = 60.;
@@ -557,7 +626,7 @@ fn main() {
     }
 */
     // convert_to_csv(&state.map);
-    // state.map = csv_to_keys(fs::read_to_string("converted-maps/Journey - Don't Stop Believin'.csv").unwrap());
+    // state.map = csv_to_keys(fs::read_to_string("converted-maps/map.csv").unwrap());
 
     // not completely sure how Arc<Mutex<T>> works but it does work
     // see https://doc.rust-lang.org/book/ch16-03-shared-state.html
