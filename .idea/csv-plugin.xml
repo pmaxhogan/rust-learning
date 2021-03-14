@@ -10,6 +10,13 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="/maps/Journey - Don't Stop Believin'/01 - Journey - Don't Stop Believin'.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="&#9;" />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="/src/main.rs">
           <value>
             <Attribute>
