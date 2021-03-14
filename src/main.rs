@@ -1,8 +1,7 @@
 // TODOs:
-// - add a screen-height of pre-scroll instead of a countdown
 // - support holds (2 to 3)
-// - change scroll direction option
 // - user-configured delay and constants
+// - make graph of error
 
 
 use std::cmp::max;
@@ -72,6 +71,7 @@ struct State {
     score: f64,
     quit: bool,
     paused: bool,
+    song_playing: bool
 }
 
 // default height
@@ -83,7 +83,7 @@ const HEIGHT: u32 = 1080;
 const SCROLL_SPEED: f32 = 80f32;
 
 // height of the line, ie how many pixels you should hit the note at
-const SCREEN_OFFSET: f32 = 100f32;
+const LINE_HEIGHT: f32 = 100f32;
 
 // value in ms
 // set this high if you tend to hit too early
@@ -91,7 +91,7 @@ const SCREEN_OFFSET: f32 = 100f32;
 const KEY_DELAY:f32 = 0f32;
 
 // how many seconds of warmup you get
-const WARMUP_SECS: i32 = 1;
+const WARMUP_SECS: i32 = 0;
 
 // echos keys to the console when you press them
 const RECORD: bool = false;
@@ -105,7 +105,7 @@ const DISABLE_MISS_PENALTY: bool = true;
 
 // skip this many seconds into the song
 // moves both note track and audio
-const SECONDS_TO_SKIP: u64 = 0;
+const SECONDS_TO_SKIP: i64 = -1;
 
 // font size of messages
 const MESSAGE_SIZE: u32 = 20;
@@ -122,6 +122,9 @@ const AUDIO_LATENCY_OFFSET: f64 = 0.;
 
 // why would you do this
 const ENABLE_KEY_REPEAT:bool = false;
+
+// set to false for the notes to scroll upwards
+const SCROLL_DOWN: bool = true;
 
 /**
 * h is [0, 360]
@@ -333,8 +336,25 @@ fn csv_to_keys(str: String) -> Vec<MapKey> {
     res
 }
 
-fn get_screen_height(time:f32, height_of_screen: u32) -> f32 {
-    return 0.00001f32 * SCROLL_SPEED * (height_of_screen as f32) * (time + KEY_DELAY) + SCREEN_OFFSET;
+fn time_to_screen_height(time:f32, height_of_window: u32, include_key_delay: bool) -> f32 {
+    let height_of_window = height_of_window as f32;
+
+    let val = (0.00001f32 * SCROLL_SPEED * height_of_window * (time + if include_key_delay {KEY_DELAY} else {0.}) + LINE_HEIGHT);
+
+    if SCROLL_DOWN{
+        return height_of_window - val
+    }
+    val
+}
+
+// simple function for fading in and out something
+// https://www.desmos.com/calculator/rzbucjsfyh
+fn fade_in_out(time: f64) -> f64{
+    if time < 0. || time > 1. {
+        panic!("Invalid time ".to_owned() + &time.to_string());
+    }
+
+    (1.5 - 2.7 * (time - 0.5).abs()).min(1.)
 }
 
 fn main() {
@@ -472,6 +492,7 @@ fn main() {
         game_time: AUDIO_LATENCY_OFFSET,
         quit: false,
         paused: true,
+        song_playing: false
     };
 
     /*
@@ -637,6 +658,11 @@ fn main() {
 
             let duration = start.elapsed();
 
+            // unpause once the timer runs out
+            if state.paused && duration.as_secs() >= WARMUP_SECS as u64 {
+                state.paused = false;
+            }
+
             // pause timer
             if state.paused {
                 let mut text = Text::new(&format!("{}", WARMUP_SECS as u64 - duration.as_secs()), &font, 100);
@@ -648,11 +674,10 @@ fn main() {
                 state.game_time = (duration.as_micros()) as f64 / 1000f64 - (WARMUP_SECS * 1000) as f64 + (SECONDS_TO_SKIP * 1000) as f64 + AUDIO_LATENCY_OFFSET;
             }
 
-            // unpause once the timer runs out
-            if state.paused && duration.as_secs() >= WARMUP_SECS as u64 {
-                state.paused = false;
-                song.set_playing_offset(Time::seconds(SECONDS_TO_SKIP as f32));
+            if !state.song_playing && !state.paused && state.game_time - AUDIO_LATENCY_OFFSET >= 0.{
+                song.set_playing_offset(Time::seconds(0.));
                 song.play();
+                state.song_playing = true;
             }
 
             // draw map keys
@@ -662,7 +687,7 @@ fn main() {
                 let screen_time = (map_key.time - state.game_time) as f32;
 
                 // screen_pos is the exact pixel that you want to "hit"
-                let screen_pos = get_screen_height(screen_time, height);// 0.00001f32 * SCROLL_SPEED * (height as f32) * screen_time + SCREEN_OFFSET;
+                let screen_pos = time_to_screen_height(screen_time, height, true);// 0.00001f32 * SCROLL_SPEED * (height as f32) * screen_time + SCREEN_OFFSET;
 
                 // if the key is definately not on the screen, we can quit right now
                 if screen_pos < NO_RENDER_BUFFER as f32 || screen_pos > (HEIGHT + NO_RENDER_BUFFER) as f32 { continue; }
@@ -702,28 +727,36 @@ fn main() {
                 let x = 100. + key_idx as f32 * 150.;
 
 
-                let mut y = 0;
+                let mut y: f32 = 0.;
                 for message in &state.messages {
                     if message.direction != *direction { continue; }
 
                     let mut text = Text::new(&format!("{:?}", message.val), &font, MESSAGE_SIZE);
 
-                    text.set_fill_color(Color::WHITE);
-                    text.set_position((x, (y * MESSAGE_SIZE + 1) as f32));
+                    let time_ratio = ((state.game_time - message.time) / MESSAGE_DURATION).min(1.).max(0.);
+
+                    let color = (fade_in_out(time_ratio) * 256.) as u8;
+
+                    text.set_fill_color(Color::rgb(color, color, color));
+
+                    let msg_height = y * MESSAGE_SIZE as f32 + 1.;
+                    text.set_position((x, if SCROLL_DOWN { height as f32 - msg_height - MESSAGE_SIZE as f32 } else { msg_height }));
                     window.draw(&text);
 
-                    y += 1;
+                    y += 1.;
                 }
 
                 let mut text = Text::new(&format!("{:?}", direction), &font, 20);
                 text.set_fill_color(Color::WHITE);
-                text.set_position((x, 70.));
+                text.set_position((x, if SCROLL_DOWN { height as f32 - 70. - MESSAGE_SIZE as f32 } else { 70. }));
                 window.draw(&text);
             }
 
             {
                 let mut hit_line = RectangleShape::new();
-                hit_line.set_position((0., SCREEN_OFFSET));
+
+                // the line should be at time "0"
+                hit_line.set_position((0., time_to_screen_height(0., height, false)));
                 hit_line.set_size((width as f32, 1.));
                 hit_line.set_fill_color(Color::WHITE);
                 window.draw(&hit_line);
