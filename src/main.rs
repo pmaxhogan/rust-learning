@@ -539,9 +539,9 @@ fn main() {
     // include_bytes! builds this font into our executable, meaning that we do not need to bring
     // a resources/ folder around. very handy!
     // we unwrap because it should crash if the font isn't there (a bug)
-    let font = Font::from_memory(include_bytes!("resources/sansation.ttf")).unwrap();
+    let font     = Font::from_memory(include_bytes!("resources/sansation.ttf")).unwrap();
 
-    let folder_result = load_map_folder("src/resources/Journey - Don't Stop Believin'/").unwrap();
+    let folder_result = load_map_folder("maps/Journey - Don't Stop Believin'/").unwrap();
 
     let state = State {
         keys: KeysPressed {
