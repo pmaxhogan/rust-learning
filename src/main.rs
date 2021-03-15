@@ -493,7 +493,7 @@ fn main() {
                         hit_key.hit = true;
                     }
 
-                    error = (hit_key.time - game_time).abs().min(KEY_ERROR_RANGE);
+                    error = (if key_was_released { hit_key.time_end - game_time } else {hit_key.time - game_time}).abs().min(KEY_ERROR_RANGE);
 
                     state.score += error;
 
