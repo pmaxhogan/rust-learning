@@ -1,8 +1,6 @@
 // TODOs:
-// - support holds (2 to 3)
+// - make graph of key error
 // - user-configured delay and constants
-// - make graph of error
-
 
 use std::cmp::max;
 use std::collections::HashMap;
@@ -52,6 +50,8 @@ struct MapKey {
     direction: KeyDirection,
     time: f64,
     hit: bool,
+    hit_start: bool,
+    time_end: f64// set to -1 if it's normal, otherwise the time to hold until
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -65,6 +65,7 @@ struct KeysPressed {
 #[derive(Debug)]
 struct State {
     keys: KeysPressed,
+    keys_released: KeysPressed,
     map: Vec<MapKey>,
     messages: Vec<Message>,
     game_time: f64,
@@ -105,7 +106,7 @@ const DISABLE_MISS_PENALTY: bool = true;
 
 // skip this many seconds into the song
 // moves both note track and audio
-const SECONDS_TO_SKIP: i64 = -1;
+const SECONDS_TO_SKIP: i64 = -2;
 
 // font size of messages
 const MESSAGE_SIZE: u32 = 20;
@@ -125,6 +126,8 @@ const ENABLE_KEY_REPEAT:bool = false;
 
 // set to false for the notes to scroll upwards
 const SCROLL_DOWN: bool = true;
+
+const COLUMN_WIDTH:f32 = 100.;
 
 /**
 * h is [0, 360]
@@ -164,7 +167,6 @@ fn sm_to_keys(str: String) -> Vec<MapKey> {
     let mut bpms_str = String::new();
     let mut bpms_on = false;
 
-
     let mut measure = 0;
     let mut current_beat = 0;
     let mut current_bpm = 0.;
@@ -172,10 +174,11 @@ fn sm_to_keys(str: String) -> Vec<MapKey> {
     let mut measure_string = String::new();
     let mut current_time: f64 = 0.;
 
+    let mut holds_map = HashMap::new();
 
     let mut is_note_section = false;
     for line in str.split("\r\n") {
-        let num_line = line.starts_with('0') || line.starts_with('1') || line.starts_with('2') || line.starts_with('3');
+        let num_line = line.starts_with('0') || line.starts_with('1') || line.starts_with('2') || line.starts_with('3') || line.starts_with('M');
 
         if line.starts_with("//") { continue; }
 
@@ -200,7 +203,7 @@ fn sm_to_keys(str: String) -> Vec<MapKey> {
                     //     bpm_box.pop();
                     //     bpm = bpm_box.as_str();
                     // }
-                    println!("{}", bpm);
+                    // println!("{}", bpm);
                     bpms_map.insert(measure.parse::<usize>().unwrap(), bpm.parse::<f64>().unwrap());
                 }
             }
@@ -225,7 +228,7 @@ fn sm_to_keys(str: String) -> Vec<MapKey> {
                     current_beat += 1;
                 }
 
-                println!(" current beat : {}", current_beat);
+                // println!(" current beat : {}", current_beat);
                 // println!("string {:#?}", bpms_str);
                 match bpms_map.get(&(current_beat as usize)) {
                     None => {}
@@ -236,7 +239,7 @@ fn sm_to_keys(str: String) -> Vec<MapKey> {
 
                 let current_beat_duration = 60f64 / current_bpm;
 
-                println!("measure line {}", measure_line);
+                // println!("measure line {}", measure_line);
 
                 let split: Chars = measure_line.chars();
 
@@ -251,16 +254,23 @@ fn sm_to_keys(str: String) -> Vec<MapKey> {
                                 direction: map_key_disp_order[i],
                                 time: current_time * 1000.,
                                 hit: false,
+                                hit_start: false,
+                                time_end: -1.
                             })
                         }
                         '2' => {
+                            holds_map.insert(i, current_time);
+                        }
+                        '3' => {
                             keys.push(MapKey {
                                 direction: map_key_disp_order[i],
-                                time: current_time * 1000.,
+                                time: *holds_map.get(&i).unwrap() * 1000.,
                                 hit: false,
-                            })
+                                hit_start: false,
+                                time_end: current_time * 1000.
+                            });
+                            holds_map.remove(&i);
                         }
-                        '3' => {}
                         'M' => {}
                         _ => { panic!("Unknown number ".to_owned() + measure_line) }
                     }
@@ -327,6 +337,8 @@ fn csv_to_keys(str: String) -> Vec<MapKey> {
                 },
                 time: time.parse().unwrap(),
                 hit: false,
+                hit_start: false,
+                time_end: -1.
             });
         }
     } else {
@@ -443,17 +455,29 @@ fn main() {
     let physics = move |state: &mut State| -> () {
         let game_time = state.game_time as f64;
 
-        let check_direction = move |dir: KeyDirection, state: &mut State| {
+        let check_direction = move |dir: KeyDirection, state: &mut State, key_was_released: bool| {
             if RECORD {
                 println!("{} {}", state.map.iter().filter(|x| x.hit).count(), state.game_time);
             }
+
             if !state.map.is_empty() {
                 let mut hit_key_opt = None;
                 let mut lowest_abs = f64::INFINITY;
                 let error;
                 for map_key in &mut state.map {
-                    let abs = (map_key.time - game_time).abs();
-                    if !map_key.hit && map_key.direction == dir && abs < lowest_abs && abs < KEY_ERROR_RANGE {
+                    let abs = if key_was_released {
+                        if game_time < map_key.time_end && game_time > map_key.time{
+                            // panic!("range");
+                            0.
+                        }else {
+                            (map_key.time_end - game_time).abs()
+                        }
+                    } else {
+                        (map_key.time - game_time).abs()
+                    };
+
+                    let start_hit_condition = if key_was_released { map_key.hit_start } else { !map_key.hit_start };
+                    if start_hit_condition && !map_key.hit && map_key.direction == dir && abs < lowest_abs && abs < KEY_ERROR_RANGE {
                         hit_key_opt = Some(map_key);
                         lowest_abs = abs;
                     }
@@ -461,10 +485,17 @@ fn main() {
 
                 // hit a key
                 if let Some(hit_key) = hit_key_opt {
-                    hit_key.hit = true;
-                    error = hit_key.time - game_time;
+                    let is_hold = hit_key.time_end != -1.;
 
-                    state.score += error.abs();
+                    if is_hold && !hit_key.hit_start {
+                        hit_key.hit_start = true;
+                    }else{
+                        hit_key.hit = true;
+                    }
+
+                    error = (hit_key.time - game_time).abs().min(KEY_ERROR_RANGE);
+
+                    state.score += error;
 
                     state.messages.push(Message { val: delay_to_message_val(error), time: state.game_time, direction: dir });
                 } else {
@@ -479,38 +510,57 @@ fn main() {
             }
         };
 
-        // for map_key in &mut state.map{
-        //     let abs = (map_key.time - game_time).abs();
-        //     if abs < 10. {
-        //         println!("FLASH!");
-        //     }
-        // }
-
         if state.keys.up {
-            check_direction(KeyDirection::Up, state);
+            check_direction(KeyDirection::Up, state, false);
             state.keys.up = false;
         }
 
         if state.keys.down {
-            check_direction(KeyDirection::Down, state);
+            check_direction(KeyDirection::Down, state, false);
             state.keys.down = false;
         }
 
         if state.keys.left {
-            check_direction(KeyDirection::Left, state);
+            check_direction(KeyDirection::Left, state, false);
             state.keys.left = false;
         }
 
         if state.keys.right {
-            check_direction(KeyDirection::Right, state);
+            check_direction(KeyDirection::Right, state, false);
             state.keys.right = false;
+        }
+
+        if state.keys_released.up {
+            check_direction(KeyDirection::Up, state, true);
+            state.keys_released.up = false;
+        }
+
+        if state.keys_released.down {
+            check_direction(KeyDirection::Down, state, true);
+            state.keys_released.down = false;
+        }
+
+        if state.keys_released.left {
+            check_direction(KeyDirection::Left, state, true);
+            state.keys_released.left = false;
+        }
+
+        if state.keys_released.right {
+            check_direction(KeyDirection::Right, state, true);
+            state.keys_released.right = false;
         }
 
         // entirely missed a key
         for map_key in &mut state.map {
-            let mut error = map_key.time - state.game_time;
+            let mut error = if map_key.hit_start { map_key.time_end - state.game_time } else { map_key.time - state.game_time };
             if !map_key.hit && -error > KEY_ERROR_RANGE {
-                map_key.hit = true;
+                let is_hold = map_key.time_end == -1.;
+
+                if is_hold && !map_key.hit_start {
+                    map_key.hit_start = true;
+                }else{
+                    map_key.hit = true;
+                }
 
                 error = KEY_ERROR_RANGE;
 
@@ -541,10 +591,16 @@ fn main() {
     // we unwrap because it should crash if the font isn't there (a bug)
     let font     = Font::from_memory(include_bytes!("resources/sansation.ttf")).unwrap();
 
-    let folder_result = load_map_folder("maps/Journey - Don't Stop Believin'/").unwrap();
+    let folder_result = load_map_folder("maps/Cyber Induction (IcyWorld)/").unwrap();
 
     let state = State {
         keys: KeysPressed {
+            up: false,
+            down: false,
+            left: false,
+            right: false,
+        },
+        keys_released: KeysPressed {
             up: false,
             down: false,
             left: false,
@@ -691,28 +747,28 @@ fn main() {
                     } => state.keys.up = true,
                     Event::KeyReleased {
                         code: Key::Up, ..
-                    } => state.keys.up = false,
+                    } => state.keys_released.up = true,
 
                     Event::KeyPressed {
                         code: Key::Down, ..
                     } => state.keys.down = true,
                     Event::KeyReleased {
                         code: Key::Down, ..
-                    } => state.keys.down = false,
+                    } => state.keys_released.down = true,
 
                     Event::KeyPressed {
                         code: Key::Left, ..
                     } => state.keys.left = true,
                     Event::KeyReleased {
                         code: Key::Left, ..
-                    } => state.keys.left = false,
+                    } => state.keys_released.left = true,
 
                     Event::KeyPressed {
                         code: Key::Right, ..
                     } => state.keys.right = true,
                     Event::KeyReleased {
                         code: Key::Right, ..
-                    } => state.keys.right = false,
+                    } => state.keys_released.right = true,
 
                     Event::Resized { width: new_width, height: new_height } => {
                         width = new_width;
@@ -754,15 +810,22 @@ fn main() {
 
                 let mut rect = RectangleShape::new();
                 let screen_time = (map_key.time - state.game_time) as f32;
+                let screen_time_end = (map_key.time_end - state.game_time) as f32;
 
                 // screen_pos is the exact pixel that you want to "hit"
-                let screen_pos = time_to_screen_height(screen_time, height, true);// 0.00001f32 * SCROLL_SPEED * (height as f32) * screen_time + SCREEN_OFFSET;
+                let screen_pos = time_to_screen_height(screen_time, height, true);
+
+                // screen_pos is the exact pixel that you want to "hit"
+                let screen_pos_end = if map_key.time_end == -1. { screen_pos } else { time_to_screen_height(screen_time_end, height, true)  };
 
                 // if the key is definately not on the screen, we can quit right now
-                if screen_pos < NO_RENDER_BUFFER as f32 || screen_pos > (HEIGHT + NO_RENDER_BUFFER) as f32 { continue; }
+                if (screen_pos < -(NO_RENDER_BUFFER as f32) && screen_pos_end < -(NO_RENDER_BUFFER as f32)) ||
+                    (screen_pos > (HEIGHT + NO_RENDER_BUFFER) as f32 && screen_pos_end > (HEIGHT + NO_RENDER_BUFFER) as f32) {
+                    continue;
+                }
 
                 let key_idx = map_key_disp_order.iter().position(|&r| r == map_key.direction).unwrap();
-                let x = 100. + key_idx as f32 * 150.;
+                let x = 100. + key_idx as f32 * COLUMN_WIDTH;
 
 
                 for key_range in &height_and_saturation_map {
@@ -771,12 +834,12 @@ fn main() {
                     let mut saturation = key_range.1;
                     let mut value = 1.0;
 
-                    if map_key.hit {
+                    if map_key.hit_start {
                         // r = 255;
                         // g = 255;
                         // b = 255;
                         saturation /= 2.;
-                        value = 0.;
+                        value /= 3.;
                     }
 
                     let (r, g, b) = hsv_to_rgb(((map_key.time as usize / 75) % 360) as u32, saturation, value);
@@ -784,7 +847,7 @@ fn main() {
                     rect.set_fill_color(Color::rgb(r as u8, g as u8, b as u8));
                     rect.set_position((x, (screen_pos as f32) - rect_height / 2.));
 
-                    rect.set_size((100f32, rect_height));
+                    rect.set_size((100f32, rect_height - (screen_pos_end - screen_pos).abs()));
                     window.draw(&rect);
                 }
 
@@ -793,7 +856,7 @@ fn main() {
             // draw key names & messages
             for direction in &map_key_disp_order {
                 let key_idx = map_key_disp_order.iter().position(|&r| r == *direction).unwrap();
-                let x = 100. + key_idx as f32 * 150.;
+                let x = 100. + key_idx as f32 * COLUMN_WIDTH;
 
 
                 let mut y: f32 = 0.;
