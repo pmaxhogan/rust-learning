@@ -351,7 +351,7 @@ fn csv_to_keys(str: String) -> Vec<MapKey> {
 fn time_to_screen_height(time:f32, height_of_window: u32, include_key_delay: bool) -> f32 {
     let height_of_window = height_of_window as f32;
 
-    let val = (0.00001f32 * SCROLL_SPEED * height_of_window * (time + if include_key_delay {KEY_DELAY} else {0.}) + LINE_HEIGHT);
+    let val = 0.00001f32 * SCROLL_SPEED * height_of_window * (time + if include_key_delay {KEY_DELAY} else {0.}) + LINE_HEIGHT;
 
     if SCROLL_DOWN{
         return height_of_window - val
@@ -554,7 +554,7 @@ fn main() {
         for map_key in &mut state.map {
             let mut error = if map_key.hit_start { map_key.time_end - state.game_time } else { map_key.time - state.game_time };
             if !map_key.hit && -error > KEY_ERROR_RANGE {
-                let is_hold = map_key.time_end == -1.;
+                let is_hold = map_key.time_end != -1.;
 
                 if is_hold && !map_key.hit_start {
                     map_key.hit_start = true;
@@ -591,7 +591,7 @@ fn main() {
     // we unwrap because it should crash if the font isn't there (a bug)
     let font     = Font::from_memory(include_bytes!("resources/sansation.ttf")).unwrap();
 
-    let folder_result = load_map_folder("maps/Cyber Induction (IcyWorld)/").unwrap();
+    let folder_result = load_map_folder("maps/Journey - Don't Stop Believin'/").unwrap();
 
     let state = State {
         keys: KeysPressed {
@@ -819,8 +819,9 @@ fn main() {
                 let screen_pos_end = if map_key.time_end == -1. { screen_pos } else { time_to_screen_height(screen_time_end, height, true)  };
 
                 // if the key is definately not on the screen, we can quit right now
-                if (screen_pos < -(NO_RENDER_BUFFER as f32) && screen_pos_end < -(NO_RENDER_BUFFER as f32)) ||
-                    (screen_pos > (HEIGHT + NO_RENDER_BUFFER) as f32 && screen_pos_end > (HEIGHT + NO_RENDER_BUFFER) as f32) {
+                if ((screen_pos < -(NO_RENDER_BUFFER as f32) && screen_pos_end < -(NO_RENDER_BUFFER as f32)) ||
+                    (screen_pos > (HEIGHT + NO_RENDER_BUFFER) as f32 && screen_pos_end > (HEIGHT + NO_RENDER_BUFFER) as f32)) ||
+                    map_key.hit {
                     continue;
                 }
 
