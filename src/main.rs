@@ -1,6 +1,8 @@
 // TODOs:
-// - make graph of key error
 // - progress bar of song (include time elapsed and total time)
+// - show song title & subtitle
+// - parse helblinde/little busters forever, multi-difficulty songs (seperated by ;)
+// - mp3 support
 // - test it with other real songs
 // - user-configured delay and constants
 // - compile for windows (ask discord for help)
@@ -81,11 +83,17 @@ struct State {
     errors: Vec<f64>
 }
 
+#[derive(Debug)]
+struct SmFileResult {
+    difficulties: Vec<String>,
+    difficulties_map: HashMap<String, Vec<MapKey>>
+}
+
 // default height
 const WIDTH: u32 = 1920;
 const HEIGHT: u32 = 1080;
 
-const INCLUDE_MISSES_IN_HISTOGRAM: bool = false;
+const INCLUDE_MISSES_IN_HISTOGRAM: bool = true;
 
 // "visual BPM", how fast the notes scroll
 // does not impact actual song speed
@@ -175,9 +183,11 @@ fn hsv_to_rgb(h: u32, s: f32, v: f32) -> (u32, u32, u32) {
     return (r.round() as u32, g.round() as u32, b.round() as u32);
 }
 
-fn sm_to_keys(str: String) -> Vec<MapKey> {
+fn sm_to_keys(str: String) -> SmFileResult {
     let map_key_disp_order: Vec<KeyDirection> = vec![KeyDirection::Left, KeyDirection::Down, KeyDirection::Up, KeyDirection::Right];
     let mut keys: Vec<MapKey> = vec![];
+    let mut difficulties_map = HashMap::new();
+    let mut difficulties:Vec<String> = Vec::new();
 
     // maps measure to BPM
     let mut bpms_map = HashMap::new();
@@ -193,16 +203,45 @@ fn sm_to_keys(str: String) -> Vec<MapKey> {
 
     let mut holds_map = HashMap::new();
 
+    let mut is_difficulty_header = false;
+    let mut difficulty_values:Vec<&str> = Vec::with_capacity(7);
+    let mut difficulty = "";
+
     let mut is_note_section = false;
-    for line in str.split("\r\n") {
+    for line in str.split("\n") {
+        let mut line = line;
+        if line.ends_with("\r"){
+            line = &line[0..(line.len() - 1)];
+        }
+
+        if line.trim().is_empty() { continue; }
+
         let num_line = line.starts_with('0') || line.starts_with('1') || line.starts_with('2') || line.starts_with('3') || line.starts_with('M');
 
-        if line.starts_with("//") { continue; }
+        if num_line && is_difficulty_header{
+            is_difficulty_header = false;
+
+            if difficulty_values.len() != 6 {
+                panic!(format!("Confusing difficulty header! {:#?}", difficulty_values));
+            }
+
+            let len = difficulty_values[3].len();
+            difficulty = difficulty_values[3][0..(len - 1)].trim();
+            difficulties.push(difficulty.to_string());
+        }
+
+        if line.starts_with("//--"){
+            is_difficulty_header = true;
+        }
 
         if line.starts_with("#") {
             let split: Vec<&str> = line.split(":").collect();
             let key = split[0];
             let value = split[1];
+
+            if is_difficulty_header && key != "#NOTES"{
+                panic!("Unknown key found in notes ".to_owned() + line);
+            }
 
             if key == "#BPMS" {
                 bpms_str += value;
@@ -210,31 +249,30 @@ fn sm_to_keys(str: String) -> Vec<MapKey> {
             } else if bpms_on {
                 bpms_on = false;
 
-                let bpms_split: Vec<&str> = bpms_str[0..bpms_str.len() - 2].split(",").collect();
+                bpms_str = bpms_str.trim_end().parse().unwrap();
+
+                let bpms_split: Vec<&str> = bpms_str[0..bpms_str.len() - 1].split(",").collect();
                 for bpm_bit in bpms_split {
                     let measure_and_bpm: Vec<&str> = bpm_bit.split('=').collect();
                     let measure = measure_and_bpm[0];
                     let bpm = measure_and_bpm[1];
-                    // let mut bpm_box = String::from(bpm);
-                    // if bpm.ends_with(";") {
-                    //     bpm_box.pop();
-                    //     bpm = bpm_box.as_str();
-                    // }
-                    // println!("{}", bpm);
-                    bpms_map.insert(measure.parse::<usize>().unwrap(), bpm.parse::<f64>().unwrap());
+
+                    bpms_map.insert(measure.parse::<f64>().unwrap() as usize, bpm.parse::<f64>().unwrap());
                 }
             }
         } else if bpms_on {
             bpms_str += line;
+        } else if is_difficulty_header{
+            difficulty_values.push(line);
         }
 
         if !is_note_section && num_line {
             is_note_section = true;
         }
 
+        if line.starts_with(",") || line.starts_with(";") {
+            println!("difficulty {}", difficulty);
 
-        // println!("line {}", line);
-        if line.starts_with(",") {
             let measure_vec: Vec<&str> = measure_string.split("\n").collect();
             let notes_in_measure = measure_vec.len();
 
@@ -255,8 +293,6 @@ fn sm_to_keys(str: String) -> Vec<MapKey> {
                 }
 
                 let current_beat_duration = 60f64 / current_bpm;
-
-                // println!("measure line {}", measure_line);
 
                 let split: Chars = measure_line.chars();
 
@@ -305,12 +341,41 @@ fn sm_to_keys(str: String) -> Vec<MapKey> {
             measure += 1;
         }
 
+
+        if line == ";"{
+            println!("keys: {:#?}", keys);
+            difficulties_map.insert(difficulty.to_string(), keys);
+            keys = vec![];
+
+            measure = 0;
+            current_beat = 0;
+            current_bpm = 0.;
+            current_time = 0.;
+            measure_string = String::new();
+
+            if !holds_map.is_empty(){
+                panic!(format!("Still had holds left over! {:#?}", holds_map));
+            }
+
+            holds_map.clear();
+
+            difficulty_values.clear();
+        }
+
         if num_line {
             // println!("adding num line {}", line);
             measure_string += &*(line.to_owned() + "\n");
         }
     }
-    keys
+
+
+    if !holds_map.is_empty(){
+        panic!(format!("Still had holds left over! {:#?}", holds_map));
+    }
+    SmFileResult{
+        difficulties,
+        difficulties_map
+    }
 }
 
 fn convert_to_csv(keys: &Vec<MapKey>) {
@@ -387,7 +452,8 @@ fn fade_in_out(time: f64) -> f64{
 }
 
 struct MapLoadResult{
-    keys: Vec<MapKey>,
+    difficulties: Vec<String>,
+    difficulties_map: HashMap<String, Vec<MapKey>>,
     song: String
 }
 
@@ -424,7 +490,13 @@ fn load_map_folder(folder: &str) -> Result<MapLoadResult, String> {
                                     }
 
                                     if let Ok(str) = fs::read_to_string(path) {
-                                        keys = Some(csv_to_keys(str));
+                                        let mut difficulties_map = HashMap::new();
+                                        difficulties_map.insert("Normal".to_string(), csv_to_keys(str));
+
+                                        keys = Some(SmFileResult{
+                                            difficulties: vec!["Normal".to_string()],
+                                            difficulties_map
+                                        });
                                     }
                                 },
                                 // TODO: implement this
@@ -438,8 +510,11 @@ fn load_map_folder(folder: &str) -> Result<MapLoadResult, String> {
             }
 
             if keys.is_some() && song.is_some() {
+                let unwrapped = keys.unwrap();
+
                 Ok(MapLoadResult {
-                    keys: keys.unwrap(),
+                    difficulties: unwrapped.difficulties,
+                    difficulties_map: unwrapped.difficulties_map,
                     song: song.unwrap().parse().unwrap()
                 })
             } else {
@@ -460,6 +535,17 @@ fn closest_to_zero (num1: f64, num2: f64) -> f64 {
 }
 
 fn main() {
+    // let b = format!("{:#?}", sm_to_keys(fs::read_to_string("maps/test/test2.sm").unwrap()));
+    //
+    //
+    // let a = format!("{:#?}", sm_to_keys(fs::read_to_string("maps/test/test.sm").unwrap()));
+    //
+    // fs::write("a.txt", a);
+    // fs::write("b.txt", b);
+    // panic!("lol");
+
+    // assert_eq!(a, b);
+
     // println!("{:?}", sm_to_keys(fs::read_to_string("src/resources/map/map.sm").unwrap()));
 
     let mut width = WIDTH;
@@ -622,7 +708,11 @@ fn main() {
     // we unwrap because it should crash if the font isn't there (a bug)
     let font     = Font::from_memory(include_bytes!("resources/sansation.ttf")).unwrap();
 
-    let folder_result = load_map_folder("maps/Journey - Don't Stop Believin'/").unwrap();
+    let folder_result = load_map_folder("maps/Helblinde/Little Busters Forever - [Zaia]").unwrap();
+
+    let easy_str = &"Easy".to_string();
+
+    let easy = if folder_result.difficulties.contains(easy_str) { easy_str } else { &folder_result.difficulties[folder_result.difficulties.len() - 1] };
 
     let state = State {
         keys: KeysPressed {
@@ -638,7 +728,7 @@ fn main() {
             right: false,
         },
         messages: vec![],
-        map: folder_result.keys,
+        map: folder_result.difficulties_map.get(easy).unwrap().to_vec(),
         score: 0f64,
         game_time: AUDIO_LATENCY_OFFSET,
         quit: false,
