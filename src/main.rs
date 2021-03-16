@@ -271,7 +271,6 @@ fn sm_to_keys(str: String) -> SmFileResult {
         }
 
         if line.starts_with(",") || line.starts_with(";") {
-            println!("difficulty {}", difficulty);
 
             let measure_vec: Vec<&str> = measure_string.split("\n").collect();
             let notes_in_measure = measure_vec.len();
@@ -283,8 +282,6 @@ fn sm_to_keys(str: String) -> SmFileResult {
                     current_beat += 1;
                 }
 
-                // println!(" current beat : {}", current_beat);
-                // println!("string {:#?}", bpms_str);
                 match bpms_map.get(&(current_beat as usize)) {
                     None => {}
                     Some(bpm) => {
@@ -343,7 +340,6 @@ fn sm_to_keys(str: String) -> SmFileResult {
 
 
         if line == ";"{
-            println!("keys: {:#?}", keys);
             difficulties_map.insert(difficulty.to_string(), keys);
             keys = vec![];
 
@@ -363,7 +359,6 @@ fn sm_to_keys(str: String) -> SmFileResult {
         }
 
         if num_line {
-            // println!("adding num line {}", line);
             measure_string += &*(line.to_owned() + "\n");
         }
     }
@@ -535,23 +530,9 @@ fn closest_to_zero (num1: f64, num2: f64) -> f64 {
 }
 
 fn main() {
-    // let b = format!("{:#?}", sm_to_keys(fs::read_to_string("maps/test/test2.sm").unwrap()));
-    //
-    //
-    // let a = format!("{:#?}", sm_to_keys(fs::read_to_string("maps/test/test.sm").unwrap()));
-    //
-    // fs::write("a.txt", a);
-    // fs::write("b.txt", b);
-    // panic!("lol");
-
-    // assert_eq!(a, b);
-
-    // println!("{:?}", sm_to_keys(fs::read_to_string("src/resources/map/map.sm").unwrap()));
-
     let mut width = WIDTH;
     let mut height = HEIGHT;
 
-    // let height_and_saturation_map: Vec<(f32, f32)> = vec![(45f32, 0.25), (20f32, 0.5), (4f32, 1.)];
     let height_and_saturation_map: Vec<(f32, f32)> = vec![(30f32, 0.25), (20f32, 0.5), (4f32, 1.)];
     let map_key_disp_order: Vec<KeyDirection> = vec![KeyDirection::Left, KeyDirection::Down, KeyDirection::Up, KeyDirection::Right];
     let messages_order = [MessageVal::Perfect, MessageVal::Fantastic, MessageVal::Excellent, MessageVal::Great, MessageVal::Good, MessageVal::Mediocre, MessageVal::Awful];
