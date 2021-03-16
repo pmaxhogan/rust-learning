@@ -77,16 +77,19 @@ struct State {
     score: f64,
     quit: bool,
     paused: bool,
-    song_playing: bool
+    song_playing: bool,
+    errors: Vec<f64>
 }
 
 // default height
 const WIDTH: u32 = 1920;
 const HEIGHT: u32 = 1080;
 
+const INCLUDE_MISSES_IN_HISTOGRAM: bool = false;
+
 // "visual BPM", how fast the notes scroll
 // does not impact actual song speed
-const SCROLL_SPEED: f32 = 80f32;
+const SCROLL_SPEED: f32 = 50f32;
 
 // height of the line, ie how many pixels you should hit the note at
 const LINE_HEIGHT: f32 = 100f32;
@@ -116,6 +119,10 @@ const SECONDS_TO_SKIP: i64 = -2;
 // font size of messages
 const MESSAGE_SIZE: u32 = 20;
 
+const HISTOGRAM_HEIGHT: f32 = 100.;
+
+const HISTOGRAM_BACKGROUND: bool = false;
+
 // how long a message stays on the screen
 const MESSAGE_DURATION: f64 = 250.;
 
@@ -133,6 +140,11 @@ const ENABLE_KEY_REPEAT:bool = false;
 const SCROLL_DOWN: bool = true;
 
 const COLUMN_WIDTH:f32 = 100.;
+
+const ERROR_GRAPH_WIDTH:f32 = 1000.;
+
+// should be an odd number
+const ERROR_GRAPH_BINS:usize = 41;
 
 /**
 * h is [0, 360]
@@ -440,6 +452,13 @@ fn load_map_folder(folder: &str) -> Result<MapLoadResult, String> {
     }
 }
 
+fn closest_to_zero (num1: f64, num2: f64) -> f64 {
+    if num1.abs() > num2.abs(){
+        return num2;
+    }
+    return num1;
+}
+
 fn main() {
     // println!("{:?}", sm_to_keys(fs::read_to_string("src/resources/map/map.sm").unwrap()));
 
@@ -498,11 +517,15 @@ fn main() {
                         hit_key.hit = true;
                     }
 
-                    error = (if key_was_released { hit_key.time_end - game_time } else {hit_key.time - game_time}).abs().min(KEY_ERROR_RANGE);
+                    let error_unclamped = if key_was_released { hit_key.time_end - game_time } else {hit_key.time - game_time};
 
-                    state.score += error;
+                    error = closest_to_zero(error_unclamped, KEY_ERROR_RANGE * error_unclamped.signum());
 
-                    state.messages.push(Message { val: delay_to_message_val(error), time: state.game_time, direction: dir });
+                    state.score += error.abs();
+
+                    state.errors.push(error);
+
+                    state.messages.push(Message { val: delay_to_message_val(error.abs()), time: state.game_time, direction: dir });
                 } else {
                     // you didn't hit anything
                     if !DISABLE_MISS_PENALTY {
@@ -567,9 +590,12 @@ fn main() {
                     map_key.hit = true;
                 }
 
-                error = KEY_ERROR_RANGE;
+                error = -KEY_ERROR_RANGE;
 
-                state.score += error;
+                state.score += error.abs();
+                if INCLUDE_MISSES_IN_HISTOGRAM {
+                    state.errors.push(error);
+                }
 
                 state.messages.push(Message { val: MessageVal::Miss, time: state.game_time, direction: map_key.direction });
             }
@@ -617,7 +643,8 @@ fn main() {
         game_time: AUDIO_LATENCY_OFFSET,
         quit: false,
         paused: true,
-        song_playing: false
+        song_playing: false,
+        errors: vec![]
     };
 
 
@@ -898,6 +925,57 @@ fn main() {
                 hit_line.set_size((width as f32, 1.));
                 hit_line.set_fill_color(Color::WHITE);
                 window.draw(&hit_line);
+            }
+
+            // draw histogram
+            {
+                let screen_center = width as f32 / 2.;
+                let bar_start = screen_center - (ERROR_GRAPH_WIDTH / 2.);
+
+                if HISTOGRAM_BACKGROUND {
+                    let mut error_bar_line = RectangleShape::new();
+                    error_bar_line.set_fill_color(Color::WHITE);
+                    error_bar_line.set_position((bar_start, (height as f32 - HISTOGRAM_HEIGHT)));
+                    error_bar_line.set_size((ERROR_GRAPH_WIDTH, HISTOGRAM_HEIGHT));
+                    window.draw(&error_bar_line);
+                }
+
+                if !state.errors.is_empty() {
+                    let mut histogram_bins: Vec<usize> = vec![0; ERROR_GRAPH_BINS];
+
+                    for error in &state.errors {
+                        // [-1, 1]
+                        let normalized_error = error / KEY_ERROR_RANGE;
+                        // https://www.desmos.com/calculator/dyfup8vcsz
+                        let bin = ((normalized_error / 2. + 0.5) * ERROR_GRAPH_BINS as f64).floor() as usize;
+
+                        match histogram_bins.get_mut(bin) {
+                            Some(elem) => *elem += 1,
+                            None => histogram_bins.insert(bin, 1)
+                        }
+                    }
+
+                    let highest_val_in_histogram = *histogram_bins.iter().max().unwrap();
+                    for bin_pos in 0..histogram_bins.len() {
+                        let bin_val = histogram_bins[bin_pos];
+                        let bin_x_pos = bar_start + (bin_pos as f32 / ERROR_GRAPH_BINS as f32) * ERROR_GRAPH_WIDTH;
+                        let bin_height = (bin_val as f32 / highest_val_in_histogram as f32) * HISTOGRAM_HEIGHT;
+
+                        let mut bin = RectangleShape::new();
+
+                        let (r, g, b) = hsv_to_rgb(((-(bin_pos as f32 / ERROR_GRAPH_BINS as f32 - 0.5).abs() + 0.5) * 256.) as u32, 1., 1.);
+                        bin.set_fill_color(Color::rgb(r as u8, g as u8, b as u8));
+                        bin.set_position((bin_x_pos, height as f32 - bin_height));
+                        bin.set_size((ERROR_GRAPH_WIDTH / ERROR_GRAPH_BINS as f32, bin_height));
+                        window.draw(&bin);
+                    }
+                }
+
+                let mut histogram_middle_line = RectangleShape::new();
+                histogram_middle_line.set_fill_color(Color::WHITE);
+                histogram_middle_line.set_position((screen_center - 1., (height as f32 - HISTOGRAM_HEIGHT)));
+                histogram_middle_line.set_size((2., HISTOGRAM_HEIGHT));
+                window.draw(&histogram_middle_line);
             }
 
             // // draw height info
