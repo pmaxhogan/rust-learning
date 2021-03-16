@@ -13,3 +13,5 @@ Cargo.lock
 /.idea/workspace.xml
 .idea/workspace.xml
 /.idea/shelf/
+
+maps/user/
