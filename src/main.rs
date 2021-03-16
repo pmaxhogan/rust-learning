@@ -1,6 +1,11 @@
 // TODOs:
 // - make graph of key error
+// - progress bar of song (include time elapsed and total time)
+// - test it with other real songs
 // - user-configured delay and constants
+// - compile for windows (ask discord for help)
+// - inspect performance with crox
+// - auto-updater
 
 use std::cmp::max;
 use std::collections::HashMap;
