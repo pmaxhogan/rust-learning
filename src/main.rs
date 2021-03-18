@@ -1,7 +1,9 @@
 // TODOs:
+// - read offset from file
 // - progress bar of song (include time elapsed and total time)
 // - show song title & subtitle
-// - parse helblinde/little busters forever, multi-difficulty songs (seperated by ;)
+// - pause functionality
+// - re-check that both scroll directions work
 // - mp3 support
 // - test it with other real songs
 // - user-configured delay and constants
@@ -80,13 +82,15 @@ struct State {
     quit: bool,
     paused: bool,
     song_playing: bool,
-    errors: Vec<f64>
+    errors: Vec<f64>,
+    delay: f64
 }
 
 #[derive(Debug)]
 struct SmFileResult {
     difficulties: Vec<String>,
-    difficulties_map: HashMap<String, Vec<MapKey>>
+    difficulties_map: HashMap<String, Vec<MapKey>>,
+    delay: f32
 }
 
 // default height
@@ -207,6 +211,8 @@ fn sm_to_keys(str: String) -> SmFileResult {
     let mut difficulty_values:Vec<&str> = Vec::with_capacity(7);
     let mut difficulty = "";
 
+    let mut delay = 0f32;
+
     let mut is_note_section = false;
     for line in str.split("\n") {
         let mut line = line;
@@ -239,14 +245,28 @@ fn sm_to_keys(str: String) -> SmFileResult {
             let key = split[0];
             let value = split[1];
 
+            // derefrence the value, remove the semi, re-refrence it
+            let value_fixed = if value.len() > 1 {&((*(value))[0..((value.len())-1)]) } else { "" };
+
             if is_difficulty_header && key != "#NOTES"{
                 panic!("Unknown key found in notes ".to_owned() + line);
             }
 
-            if key == "#BPMS" {
-                bpms_str += value;
-                bpms_on = true;
-            } else if bpms_on {
+            match key{
+                "#BPMS" => {
+                    bpms_str += value;
+                    bpms_on = true;
+                }
+                "#OFFSET" => {
+                    // parse and convert from s to ms
+                    delay = value_fixed.parse::<f32>().unwrap() * 1000.;
+                },
+                _ => {
+
+                }
+            }
+
+            if key != "#BPMS" && bpms_on {
                 bpms_on = false;
 
                 bpms_str = bpms_str.trim_end().parse().unwrap();
@@ -369,7 +389,8 @@ fn sm_to_keys(str: String) -> SmFileResult {
     }
     SmFileResult{
         difficulties,
-        difficulties_map
+        difficulties_map,
+        delay
     }
 }
 
@@ -449,7 +470,8 @@ fn fade_in_out(time: f64) -> f64{
 struct MapLoadResult{
     difficulties: Vec<String>,
     difficulties_map: HashMap<String, Vec<MapKey>>,
-    song: String
+    song: String,
+    delay: f32
 }
 
 fn load_map_folder(folder: &str) -> Result<MapLoadResult, String> {
@@ -490,7 +512,8 @@ fn load_map_folder(folder: &str) -> Result<MapLoadResult, String> {
 
                                         keys = Some(SmFileResult{
                                             difficulties: vec!["Normal".to_string()],
-                                            difficulties_map
+                                            difficulties_map,
+                                            delay: 0.
                                         });
                                     }
                                 },
@@ -510,7 +533,8 @@ fn load_map_folder(folder: &str) -> Result<MapLoadResult, String> {
                 Ok(MapLoadResult {
                     difficulties: unwrapped.difficulties,
                     difficulties_map: unwrapped.difficulties_map,
-                    song: song.unwrap().parse().unwrap()
+                    song: song.unwrap().parse().unwrap(),
+                    delay: unwrapped.delay
                 })
             } else {
                 Err("Did not find song and map in folder!".parse().unwrap())
@@ -689,7 +713,7 @@ fn main() {
     // we unwrap because it should crash if the font isn't there (a bug)
     let font     = Font::from_memory(include_bytes!("resources/sansation.ttf")).unwrap();
 
-    let folder_result = load_map_folder("maps/Helblinde/Little Busters Forever - [Zaia]").unwrap();
+    let folder_result = load_map_folder("maps/user/Helblinde/Little Busters Forever - [Zaia]").unwrap();
 
     let easy_str = &"Easy".to_string();
 
@@ -715,7 +739,8 @@ fn main() {
         quit: false,
         paused: true,
         song_playing: false,
-        errors: vec![]
+        errors: vec![],
+        delay: folder_result.delay
     };
 
 
