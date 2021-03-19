@@ -1,9 +1,8 @@
 // TODOs:
-// - read offset from file
+// - re-check that both scroll directions work
 // - progress bar of song (include time elapsed and total time)
 // - show song title & subtitle
 // - pause functionality
-// - re-check that both scroll directions work
 // - mp3 support
 // - test it with other real songs
 // - user-configured delay and constants
@@ -82,8 +81,7 @@ struct State {
     quit: bool,
     paused: bool,
     song_playing: bool,
-    errors: Vec<f64>,
-    delay: f64
+    errors: Vec<f64>
 }
 
 #[derive(Debug)]
@@ -93,47 +91,26 @@ struct SmFileResult {
     delay: f32
 }
 
+/// GRAPHICS SETTINGS
 // default height
 const WIDTH: u32 = 1920;
 const HEIGHT: u32 = 1080;
 
-const INCLUDE_MISSES_IN_HISTOGRAM: bool = true;
+// why would you do this
+const ENABLE_KEY_REPEAT:bool = false;
 
+const WINDOW_STYLE:Style = Style::RESIZE;
+
+/// VISUAL SETTINGS
 // "visual BPM", how fast the notes scroll
 // does not impact actual song speed
 const SCROLL_SPEED: f32 = 50f32;
 
-// height of the line, ie how many pixels you should hit the note at
-const LINE_HEIGHT: f32 = 100f32;
-
-// value in ms
-// set this high if you tend to hit too early
-// set this low if you tend to hit too late
-const KEY_DELAY:f32 = 0f32;
-
-// how many seconds of warmup you get
-const WARMUP_SECS: i32 = 0;
-
-// echos keys to the console when you press them
-const RECORD: bool = false;
-
-// how many ms you can be off for a key to register as a hit
-// if you are more than this late then it will register as a miss
-const KEY_ERROR_RANGE: f64 = 150f64;
-
-// disables the penalty for hitting a key when there is no note within [-KEY_ERROR_RANGE, KEY_ERROR_RANGE]
-const DISABLE_MISS_PENALTY: bool = true;
-
-// skip this many seconds into the song
-// moves both note track and audio
-const SECONDS_TO_SKIP: i64 = -2;
-
 // font size of messages
 const MESSAGE_SIZE: u32 = 20;
 
-const HISTOGRAM_HEIGHT: f32 = 100.;
-
-const HISTOGRAM_BACKGROUND: bool = false;
+// set to false for the notes to scroll upwards
+const SCROLL_DOWNWARDS: bool = false;
 
 // how long a message stays on the screen
 const MESSAGE_DURATION: f64 = 250.;
@@ -141,22 +118,52 @@ const MESSAGE_DURATION: f64 = 250.;
 // how many pixels a note needs to be offscreen to avoid it being rendered
 const NO_RENDER_BUFFER:u32 = 50;
 
-// how many ms to add to the game clock
-// a higher value means notes come in earlier
-const AUDIO_LATENCY_OFFSET: f64 = 0.;
+const NOTE_COLUMN_WIDTH:f32 = 100.;
 
-// why would you do this
-const ENABLE_KEY_REPEAT:bool = false;
+// height of the line that you hit
+const LINE_HEIGHT: f32 = 100f32;
 
-// set to false for the notes to scroll upwards
-const SCROLL_DOWN: bool = true;
+/// ERROR HISTOGRAM SETTINGS
+const INCLUDE_MISSES_IN_HISTOGRAM: bool = false;
 
-const COLUMN_WIDTH:f32 = 100.;
+const HISTOGRAM_HEIGHT: f32 = 100.;
 
-const ERROR_GRAPH_WIDTH:f32 = 1000.;
+const HISTOGRAM_BACKGROUND: bool = false;
+
+const HISTOGRAM_WIDTH:f32 = 1000.;
 
 // should be an odd number
-const ERROR_GRAPH_BINS:usize = 41;
+const HISTOGRAM_BINS:usize = 41;
+
+/// TIMING SETTINGS
+// value in ms
+// the higher this is, the later the notes come in
+const KEY_DELAY:f32 = 0f32;
+
+// skip this many seconds into the song
+// moves both note track and audio
+const SECONDS_TO_SKIP: i64 = -2;
+
+// how many seconds of warmup timer you get
+const WARMUP_SECS: i32 = 0;
+
+// how many ms to subtract from the game clock
+// should be set to the latency of your system
+// if you tend to hit notes late, set this to a positive number
+const KEY_LATENCY_OFFSET: f64 = 100.;
+
+// how many ms you can be off for a key to register as a hit
+// if you are more than this late then it will register as a miss
+const KEY_ERROR_RANGE: f64 = 150f64;
+
+/// DEBUG SETTINGS
+// echos keys to the console when you press them
+const RECORD: bool = false;
+
+/// OTHER SETTINGS
+// disables the penalty for hitting a key when there is no note within [-KEY_ERROR_RANGE, KEY_ERROR_RANGE]
+const DISABLE_MISS_PENALTY: bool = true;
+
 
 /**
 * h is [0, 360]
@@ -280,7 +287,7 @@ fn sm_to_keys(str: String) -> SmFileResult {
                     bpms_map.insert(measure.parse::<f64>().unwrap() as usize, bpm.parse::<f64>().unwrap());
                 }
             }
-        } else if bpms_on {
+        } else if bpms_on && !line.starts_with("/") && !line.starts_with("#") {
             bpms_str += line;
         } else if is_difficulty_header{
             difficulty_values.push(line);
@@ -451,7 +458,7 @@ fn time_to_screen_height(time:f32, height_of_window: u32, include_key_delay: boo
 
     let val = 0.00001f32 * SCROLL_SPEED * height_of_window * (time + if include_key_delay {KEY_DELAY} else {0.}) + LINE_HEIGHT;
 
-    if SCROLL_DOWN{
+    if SCROLL_DOWNWARDS {
         return height_of_window - val
     }
     val
@@ -568,11 +575,11 @@ fn main() {
     };
 
     let physics = move |state: &mut State| -> () {
-        let game_time = state.game_time as f64;
+        let game_time = state.game_time as f64 - KEY_LATENCY_OFFSET;
 
         let check_direction = move |dir: KeyDirection, state: &mut State, key_was_released: bool| {
             if RECORD {
-                println!("{} {}", state.map.iter().filter(|x| x.hit).count(), state.game_time);
+                println!("{} {}", state.map.iter().filter(|x| x.hit).count(), game_time);
             }
 
             if !state.map.is_empty() {
@@ -582,7 +589,6 @@ fn main() {
                 for map_key in &mut state.map {
                     let abs = if key_was_released {
                         if game_time < map_key.time_end && game_time > map_key.time{
-                            // panic!("range");
                             0.
                         }else {
                             (map_key.time_end - game_time).abs()
@@ -616,14 +622,14 @@ fn main() {
 
                     state.errors.push(error);
 
-                    state.messages.push(Message { val: delay_to_message_val(error.abs()), time: state.game_time, direction: dir });
+                    state.messages.push(Message { val: delay_to_message_val(error.abs()), time: game_time, direction: dir });
                 } else {
                     // you didn't hit anything
                     if !DISABLE_MISS_PENALTY {
                         error = KEY_ERROR_RANGE;
                         state.score += error.abs();
 
-                        state.messages.push(Message { val: MessageVal::Miss, time: state.game_time, direction: dir });
+                        state.messages.push(Message { val: MessageVal::Miss, time: game_time, direction: dir });
                     }
                 }
             }
@@ -671,7 +677,7 @@ fn main() {
 
         // entirely missed a key
         for map_key in &mut state.map {
-            let mut error = if map_key.hit_start { map_key.time_end - state.game_time } else { map_key.time - state.game_time };
+            let mut error = if map_key.hit_start { map_key.time_end - game_time } else { map_key.time - game_time };
             if !map_key.hit && -error > KEY_ERROR_RANGE {
                 let is_hold = map_key.time_end != -1.;
 
@@ -688,7 +694,7 @@ fn main() {
                     state.errors.push(error);
                 }
 
-                state.messages.push(Message { val: MessageVal::Miss, time: state.game_time, direction: map_key.direction });
+                state.messages.push(Message { val: MessageVal::Miss, time: game_time, direction: map_key.direction });
             }
         }
     };
@@ -696,7 +702,7 @@ fn main() {
     let mut window = RenderWindow::new(
         (width, height),
         "Rhythm Game!",
-        Style::RESIZE,
+        WINDOW_STYLE,
         &Default::default(),
     );
 
@@ -713,7 +719,7 @@ fn main() {
     // we unwrap because it should crash if the font isn't there (a bug)
     let font     = Font::from_memory(include_bytes!("resources/sansation.ttf")).unwrap();
 
-    let folder_result = load_map_folder("maps/user/Helblinde/Little Busters Forever - [Zaia]").unwrap();
+    let folder_result = load_map_folder("maps/included/clicktrack").unwrap();
 
     let easy_str = &"Easy".to_string();
 
@@ -735,12 +741,11 @@ fn main() {
         messages: vec![],
         map: folder_result.difficulties_map.get(easy).unwrap().to_vec(),
         score: 0f64,
-        game_time: AUDIO_LATENCY_OFFSET,
+        game_time: -folder_result.delay as f64,
         quit: false,
         paused: true,
         song_playing: false,
-        errors: vec![],
-        delay: folder_result.delay
+        errors: vec![]
     };
 
 
@@ -924,10 +929,10 @@ fn main() {
                 window.draw(&text);
             } else {
                 // set the time
-                state.game_time = (duration.as_micros()) as f64 / 1000f64 - (WARMUP_SECS * 1000) as f64 + (SECONDS_TO_SKIP * 1000) as f64 + AUDIO_LATENCY_OFFSET;
+                state.game_time = (duration.as_micros()) as f64 / 1000f64 - (WARMUP_SECS * 1000) as f64 + (SECONDS_TO_SKIP * 1000) as f64 +  (-folder_result.delay as f64);
             }
 
-            if !state.song_playing && !state.paused && state.game_time - AUDIO_LATENCY_OFFSET >= 0.{
+            if !state.song_playing && !state.paused && state.game_time - (-folder_result.delay as f64) >= 0.{
                 song.set_playing_offset(Time::seconds(0.));
                 song.play();
                 state.song_playing = true;
@@ -954,7 +959,7 @@ fn main() {
                 }
 
                 let key_idx = map_key_disp_order.iter().position(|&r| r == map_key.direction).unwrap();
-                let x = 100. + key_idx as f32 * COLUMN_WIDTH;
+                let x = 100. + key_idx as f32 * NOTE_COLUMN_WIDTH;
 
 
                 for key_range in &height_and_saturation_map {
@@ -985,7 +990,7 @@ fn main() {
             // draw key names & messages
             for direction in &map_key_disp_order {
                 let key_idx = map_key_disp_order.iter().position(|&r| r == *direction).unwrap();
-                let x = 100. + key_idx as f32 * COLUMN_WIDTH;
+                let x = 100. + key_idx as f32 * NOTE_COLUMN_WIDTH;
 
 
                 let mut y: f32 = 0.;
@@ -1001,7 +1006,7 @@ fn main() {
                     text.set_fill_color(Color::rgb(color, color, color));
 
                     let msg_height = y * MESSAGE_SIZE as f32 + 1.;
-                    text.set_position((x, if SCROLL_DOWN { height as f32 - msg_height - MESSAGE_SIZE as f32 } else { msg_height }));
+                    text.set_position((x, if SCROLL_DOWNWARDS { height as f32 - msg_height - MESSAGE_SIZE as f32 } else { msg_height }));
                     window.draw(&text);
 
                     y += 1.;
@@ -1009,7 +1014,7 @@ fn main() {
 
                 let mut text = Text::new(&format!("{:?}", direction), &font, 20);
                 text.set_fill_color(Color::WHITE);
-                text.set_position((x, if SCROLL_DOWN { height as f32 - 70. - MESSAGE_SIZE as f32 } else { 70. }));
+                text.set_position((x, if SCROLL_DOWNWARDS { height as f32 - 70. - MESSAGE_SIZE as f32 } else { 70. }));
                 window.draw(&text);
             }
 
@@ -1026,24 +1031,24 @@ fn main() {
             // draw histogram
             {
                 let screen_center = width as f32 / 2.;
-                let bar_start = screen_center - (ERROR_GRAPH_WIDTH / 2.);
+                let bar_start = screen_center - (HISTOGRAM_WIDTH / 2.);
 
                 if HISTOGRAM_BACKGROUND {
                     let mut error_bar_line = RectangleShape::new();
                     error_bar_line.set_fill_color(Color::WHITE);
                     error_bar_line.set_position((bar_start, (height as f32 - HISTOGRAM_HEIGHT)));
-                    error_bar_line.set_size((ERROR_GRAPH_WIDTH, HISTOGRAM_HEIGHT));
+                    error_bar_line.set_size((HISTOGRAM_WIDTH, HISTOGRAM_HEIGHT));
                     window.draw(&error_bar_line);
                 }
 
                 if !state.errors.is_empty() {
-                    let mut histogram_bins: Vec<usize> = vec![0; ERROR_GRAPH_BINS];
+                    let mut histogram_bins: Vec<usize> = vec![0; HISTOGRAM_BINS];
 
                     for error in &state.errors {
-                        // [-1, 1]
-                        let normalized_error = error / KEY_ERROR_RANGE;
+                        // [-1, 1], inverted so that right = too late, left = too early
+                        let normalized_error = -(error / KEY_ERROR_RANGE);
                         // https://www.desmos.com/calculator/dyfup8vcsz
-                        let bin = ((normalized_error / 2. + 0.5) * ERROR_GRAPH_BINS as f64).floor() as usize;
+                        let bin = ((normalized_error / 2. + 0.5) * HISTOGRAM_BINS as f64).floor() as usize;
 
                         match histogram_bins.get_mut(bin) {
                             Some(elem) => *elem += 1,
@@ -1054,15 +1059,15 @@ fn main() {
                     let highest_val_in_histogram = *histogram_bins.iter().max().unwrap();
                     for bin_pos in 0..histogram_bins.len() {
                         let bin_val = histogram_bins[bin_pos];
-                        let bin_x_pos = bar_start + (bin_pos as f32 / ERROR_GRAPH_BINS as f32) * ERROR_GRAPH_WIDTH;
+                        let bin_x_pos = bar_start + (bin_pos as f32 / HISTOGRAM_BINS as f32) * HISTOGRAM_WIDTH;
                         let bin_height = (bin_val as f32 / highest_val_in_histogram as f32) * HISTOGRAM_HEIGHT;
 
                         let mut bin = RectangleShape::new();
 
-                        let (r, g, b) = hsv_to_rgb(((-(bin_pos as f32 / ERROR_GRAPH_BINS as f32 - 0.5).abs() + 0.5) * 256.) as u32, 1., 1.);
+                        let (r, g, b) = hsv_to_rgb(((-(bin_pos as f32 / HISTOGRAM_BINS as f32 - 0.5).abs() + 0.5) * 256.) as u32, 1., 1.);
                         bin.set_fill_color(Color::rgb(r as u8, g as u8, b as u8));
                         bin.set_position((bin_x_pos, height as f32 - bin_height));
-                        bin.set_size((ERROR_GRAPH_WIDTH / ERROR_GRAPH_BINS as f32, bin_height));
+                        bin.set_size((HISTOGRAM_WIDTH / HISTOGRAM_BINS as f32, bin_height));
                         window.draw(&bin);
                     }
                 }
