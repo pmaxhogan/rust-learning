@@ -25,6 +25,7 @@ use sfml::{
     graphics::{Font, RectangleShape, Text, Transformable, View},
     system::{Time, Vector2}
 };
+use sfml::audio::SoundSource;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum KeyDirection {
@@ -126,11 +127,11 @@ const LINE_HEIGHT: f32 = 100f32;
 /// ERROR HISTOGRAM SETTINGS
 const INCLUDE_MISSES_IN_HISTOGRAM: bool = false;
 
-const HISTOGRAM_HEIGHT: f32 = 100.;
+const HISTOGRAM_WIDTH:f32 = 500.;
+
+const HISTOGRAM_HEIGHT: f32 = 50.;
 
 const HISTOGRAM_BACKGROUND: bool = false;
-
-const HISTOGRAM_WIDTH:f32 = 1000.;
 
 // should be an odd number
 const HISTOGRAM_BINS:usize = 41;
@@ -150,7 +151,7 @@ const WARMUP_SECS: i32 = 0;
 // how many ms to subtract from the game clock
 // should be set to the latency of your system
 // if you tend to hit notes late, set this to a positive number
-const KEY_LATENCY_OFFSET: f64 = 100.;
+const KEY_LATENCY_OFFSET: f64 = 0.;
 
 // how many ms you can be off for a key to register as a hit
 // if you are more than this late then it will register as a miss
@@ -706,7 +707,6 @@ fn main() {
         &Default::default(),
     );
 
-    // window.set_position(Vector2::from((1024, 0)));
 
     // no v-sync to help with latency
     window.set_vertical_sync_enabled(false);
@@ -752,70 +752,6 @@ fn main() {
     // supports ogg, wav, flac, aiff, au, raw, paf, svx, nist, voc, ircam, w64, mat4, mat5 pvf, htk, sds, avr, sd2, caf, wve, mpc2k, rf64, see https://docs.rs/sfml/0.14.0/sfml/audio/struct.SoundBuffer.html
     let song_buffer = SoundBuffer::from_file(&folder_result.song).unwrap();
     let mut song = Sound::with_buffer(&song_buffer);
-
-    /*
-    let bpm = 60.;
-    let bps = bpm / 60.;
-    let spb = 1. / bps;
-    println!("spb {}", spb * 1000.);
-    for n in 1..80 {
-        // BPM track
-        state.map.push(
-            MapKey{ direction: KeyDirection::Up, time: n as f64 * 1019.5 + 163., hit: false });
-
-        // state.map.push(
-        //     MapKey{ direction: KeyDirection::Up, time: n as f64 * (spb) * 1000., hit: false });
-    }
-
-    let left_track = vec![
-        1532.6459999999997, 1737.5600000000004, 1992.0410000000002, 3540.915, 3778.6440000000002, 4049.8900000000003, 5599.089, 5836.790999999999, 6057.2080000000005, 7639.093999999999, 7875.986000000001, 8114.6900000000005, 9645.38, 9832.105, 10102.506, 11668.964, 11890.639, 12128.697, 13726.137999999999, 13913.324, 14202.106, 15732.668000000001, 15970.871,
-        18049.605, 18321.779, 18542.606, 18831.468, 19289.196, 21601.739, 21840.146, 22094.872, 22349.784, 22655.996, 23130.606, 23369.512, 23760.783, 26209.604, 26396.233, 26719.18, 26974.122, 27450.223, 28095.434, 28435.398, 28809.754, 29591.244, 30254.493000000002, 34369.993, 34606.95, 34879.75, 35118.064, 35593.011, 37974.491, 38195.198, 38467.906, 38654.482, 38993.654, 39471.293, 39726.147, 40150.836, 42258.658, 42495.892, 42716.894, 42990.07, 43296.171, 43754.098, 44383.172, 44824.469, 45079.792, 45827.918, 46524.4,
-        48378.883, 48618.516, 48838.986000000004, 50403.675, 50640.865, 50880.038, 52445.366, 52649.419, 52870.223, 54486.152, 54724.265, 54946.685, 56526.466, 56765.147, 57019.47, 58550.191, 58756.740000000005, 59026.554000000004, 60607.032999999996, 60844.853, 61066.505000000005, 62629.801, 62850.710999999996, 63088.613,
-        66174.14600000001, 66391.89199999999, 66666.477, 66868.276, 67140.116, 67411.845, 67648.69, 68124.53, 70302.4, 70522.848, 70675.529, 70829.009, 71252.679, 71541.894, 72006.087, 72272.831, 72662.761, 74109.544, 74348., 74585.073, 74823.867, 75078.749, 75351.48300000001, 75605.536, 76080.04699999999, 76387.205, 76914.757, 77338.338, 77697.74799999999, 78190.765, 78411.834, 79158.958, 79362.568, 80163.239, 80417.27799999999,
-        81604.001, 82214.081, 83526.756, 84136.319, 85528.97, 86297.37, 87572.245, 88282.575, 89523.928, 90240.363, 91596.73300000001, 92328.856, 93640.054, 94371.545, 95630.3, 96358.909, 97582.641, 98262.881, 99638.067, 100184.995, 101679.681, 102377.602, 103682.582, 104348.40299999999, 105726.26, 106403.893, 107751.50200000001, 108448.76, // 109464.833, 111658.527,
-                          // 109666.916, 110482.976, 111553.51, 112271.10500000001, 112575.77900000001,
-        115136.14600000001, 115369.976, 115627.106, 117055.00200000001, 117292.079, 117529.686, 119046.565, 119234.23300000001, 119502.694, 121031.738, 121220.468, 121478.048,
-        122196.432, 122472.084, 122724.285, 123504.909, 123726.855, 123984.42, 124391.98, 126668.818, 126855.025, 127008.26699999999, 127368.407, 127672.144, 128116.592, 128317.047, 128809.163, 130136.536, 130374.594, 130628.441, 130851.391, 131071.959, 131292.045, 131563.986, 132022.75400000002, 132294.04, 133331.96600000001, 133571.951, 134268.191, 134952.241, 138024.484, 138248.886, 138482.804, 138720.345, 139775.21600000001, 140016.539, 140319.702, 140607.997, 142432.003, 142636.133, 142806.493, 143214.37099999998, 143451.219, 143892.307, 144180.1, 144607.408, 145899.832, 146138.847, 146428.404, 146664.192, 147124.364, 147561.59100000001, 148058.165, 148571.963, 149012.298, 149230.73, 149384.123, 149860.017, 150116.64299999998, 150796.343, 151088.57, 151782.02, 151976.139,
-        // 153355.405,
-        154027.602, 155333.763, 156091.994, 157367.41999999998, 158116.619, 159311.832, 160006.718, 161311.742, 162027.66, 163249.392, 163965.612, 165327.48, 166075.456, 167282.533, 168012.62900000002, 169271.217, 170001.721, 171226.40899999999, 172011.187, 173199.329, 173947.468, 175224.851, 175955.657, 177247.502, 177927.658, 179271.653, 180043.761,
-        185467.501, 186028.846, 187321.526, 187937.162, 190367.044, 190585.70500000002, 190823.834, 191050.724, 191342.634, 191846.891, 192046.816, 192794.001, 193052.139, 193306.317, 194053.24599999998, 195077.047, 195327.612, 196076.005, 196602.462, 196827.131, 197098.898, 198290.521, 199223.022,
-    201217.169, 201893.99, 202951.411, 203203.398, 203885.96600000001, 205244.961, 206177.823, 207149.768, 208153.683, 209206.191, 209900.377, 211161.528, 211859.26799999998, 213186.37, 214156.038, 215120.494, 216078.299, 217149.239, 217846.245, 218882.48, 219120.222, 219865.962, 221090.37900000002, 222062.536, 223029.079, 223980.228, 225017.946, 225785.711, 227009.774, 227787.989, 228982.53100000002, 229918.322, 230920.141, 231905.877, 232976.678, 233688.014, 234708.198, 234950.72, 235609.325, 236868.608, 237854.363, 238842.687, 239861.023, 240833.373, 241548.473, 242753.79700000002, 243483.858, 244757.46899999998, 245761.36599999998
-
-    ];
-
-    for time in left_track{
-        state.map.push(MapKey{ direction: KeyDirection::Left, time, hit: false});
-    }
-
-    for n in 0..56{
-        state.map.push(MapKey{ direction: KeyDirection::Up, time: n as f64 * 501.074 + 81630.4, hit: false });
-    }
-
-    for n in 0..137{
-        state.map.push(MapKey{ direction: KeyDirection::Up, time: n as f64 * 495.715 + 113704., hit: false });
-        if n % 4 == 3 {
-            state.map.push(MapKey { direction: KeyDirection::Right, time: n as f64 * 495.715 + 113704., hit: false });
-        }
-    }
-
-    for n in 141..267{
-        state.map.push(MapKey{ direction: KeyDirection::Up, time: n as f64 * 495.667 + 115457., hit: false });
-        if n % 4 == 3 {
-            state.map.push(MapKey { direction: KeyDirection::Right, time: n as f64 * 495.667 + 115457., hit: false });
-        }
-    }
-
-    let three_track = vec![81154.964, 64928.648, 65149.167, 109666.916, 110482.976, 111553.51, 112271.10500000001, 112575.77900000001, 153355.405,
-                           181271.432, 182034.89, 183331.206, 183802.421, 184061.13];
-
-    for time in three_track{
-        state.map.push(MapKey{ direction: KeyDirection::Left, time, hit: false });
-        state.map.push(MapKey{ direction: KeyDirection::Down, time, hit: false });
-        state.map.push(MapKey{ direction: KeyDirection::Right, time, hit: false });
-    }
-*/
-    // convert_to_csv(&state.map);
-    // state.map = csv_to_keys(fs::read_to_string("converted-maps/map.csv").unwrap());
 
     // not completely sure how Arc<Mutex<T>> works but it does work
     // see https://doc.rust-lang.org/book/ch16-03-shared-state.html
@@ -951,7 +887,7 @@ fn main() {
                 // screen_pos is the exact pixel that you want to "hit"
                 let screen_pos_end = if map_key.time_end == -1. { screen_pos } else { time_to_screen_height(screen_time_end, height, true)  };
 
-                // if the key is definately not on the screen, we can quit right now
+                // if the key is definitely not on the screen, we can quit right now
                 if ((screen_pos < -(NO_RENDER_BUFFER as f32) && screen_pos_end < -(NO_RENDER_BUFFER as f32)) ||
                     (screen_pos > (HEIGHT + NO_RENDER_BUFFER) as f32 && screen_pos_end > (HEIGHT + NO_RENDER_BUFFER) as f32)) ||
                     map_key.hit {
@@ -969,9 +905,6 @@ fn main() {
                     let mut value = 1.0;
 
                     if map_key.hit_start {
-                        // r = 255;
-                        // g = 255;
-                        // b = 255;
                         saturation /= 2.;
                         value /= 3.;
                     }
@@ -1019,13 +952,29 @@ fn main() {
             }
 
             {
-                let mut hit_line = RectangleShape::new();
-
                 // the line should be at time "0"
-                hit_line.set_position((0., time_to_screen_height(0., height, false)));
-                hit_line.set_size((width as f32, 1.));
-                hit_line.set_fill_color(Color::WHITE);
+                let line_height = time_to_screen_height(0., height, false) - 1.;
+
+                let oldest_time_key = state.map.iter().max_by(|x, y| (if x.time_end == -1. { x.time } else { x.time_end }).partial_cmp(if y.time_end == -1. { &y.time } else { &y.time_end }).unwrap()).unwrap();
+                let oldest_time = if oldest_time_key.time_end == -1. { oldest_time_key.time } else { oldest_time_key.time_end };
+
+                let time_ratio = (state.game_time / oldest_time).min(1.).max(0.);
+
+                let time_screen = width as f32 * time_ratio as f32;
+
+                let mut hit_line = RectangleShape::new();
+                hit_line.set_position((0., line_height));
+                hit_line.set_size((width as f32, 3.));
+                hit_line.set_fill_color(Color::rgb(127, 127, 127));
+
                 window.draw(&hit_line);
+
+                let mut hit_line_progress = RectangleShape::new();
+                hit_line_progress.set_position((0., line_height));
+                hit_line_progress.set_size((time_screen, 3.));
+                hit_line_progress.set_fill_color(Color::WHITE);
+
+                window.draw(&hit_line_progress);
             }
 
             // draw histogram
@@ -1033,10 +982,12 @@ fn main() {
                 let screen_center = width as f32 / 2.;
                 let bar_start = screen_center - (HISTOGRAM_WIDTH / 2.);
 
+                let histogram_bottom = if SCROLL_DOWNWARDS { height as f32 } else { LINE_HEIGHT };
+
                 if HISTOGRAM_BACKGROUND {
                     let mut error_bar_line = RectangleShape::new();
                     error_bar_line.set_fill_color(Color::WHITE);
-                    error_bar_line.set_position((bar_start, (height as f32 - HISTOGRAM_HEIGHT)));
+                    error_bar_line.set_position((bar_start, (histogram_bottom - HISTOGRAM_HEIGHT)));
                     error_bar_line.set_size((HISTOGRAM_WIDTH, HISTOGRAM_HEIGHT));
                     window.draw(&error_bar_line);
                 }
@@ -1066,29 +1017,22 @@ fn main() {
 
                         let (r, g, b) = hsv_to_rgb(((-(bin_pos as f32 / HISTOGRAM_BINS as f32 - 0.5).abs() + 0.5) * 256.) as u32, 1., 1.);
                         bin.set_fill_color(Color::rgb(r as u8, g as u8, b as u8));
-                        bin.set_position((bin_x_pos, height as f32 - bin_height));
+                        bin.set_position((bin_x_pos, histogram_bottom - bin_height));
                         bin.set_size((HISTOGRAM_WIDTH / HISTOGRAM_BINS as f32, bin_height));
                         window.draw(&bin);
                     }
                 }
 
-                let mut histogram_middle_line = RectangleShape::new();
-                histogram_middle_line.set_fill_color(Color::WHITE);
-                histogram_middle_line.set_position((screen_center - 1., (height as f32 - HISTOGRAM_HEIGHT)));
-                histogram_middle_line.set_size((2., HISTOGRAM_HEIGHT));
-                window.draw(&histogram_middle_line);
+                let histogram_lines = vec![screen_center - (HISTOGRAM_WIDTH / 2.), screen_center - 1., screen_center + (HISTOGRAM_WIDTH / 2.)];
+                for x in histogram_lines {
+                    let mut histogram_line = RectangleShape::new();
+                    histogram_line.set_fill_color(Color::WHITE);
+                    histogram_line.set_position((x, (histogram_bottom - HISTOGRAM_HEIGHT)));
+                    histogram_line.set_size((2., HISTOGRAM_HEIGHT));
+                    window.draw(&histogram_line);
+                }
             }
 
-            // // draw height info
-            // let x = state.player.x / BLOCK_SIZE as f32;
-            // let y = state.player.y as f64 / BLOCK_SIZE as f64;
-            // let mut text = Text::new(&format!("X:{}\nY: {}\nDensity: {:.3}", x, y, density(y)), &font, 16);
-            // text.set_fill_color(Color::WHITE);
-            // text.set_position((0., 66.));
-            // window.draw(&text);
-            //
-            // let duration = start.elapsed();
-            //
             let elapsed = last_frame.elapsed().as_millis();
 
             let current_fps = 1000u128 / max(elapsed, 1u128);
@@ -1099,7 +1043,7 @@ fn main() {
             }
             let fps = last_60_frames.iter().sum::<u128>() as usize / last_60_frames.len();
 
-            let mut text = Text::new(&format!("{} FPS\nScore: {}", fps, state.score / 1000.), &font, 15);
+            let mut text = Text::new(&format!("{} FPS\nScore: {:.3}", fps, state.score / 1000.), &font, 15);
             text.set_fill_color(Color::WHITE);
             text.set_position((700., 0.));
             window.draw(&text);
@@ -1108,9 +1052,6 @@ fn main() {
             c.retain(|message| state.game_time - message.time < MESSAGE_DURATION);
             state.messages = c;
         }
-
-
-        // if duration.as_secs() >= GAME_SECONDS
 
         last_frame = Instant::now();
 
