@@ -1,7 +1,5 @@
 // TODOs:
 // - re-check that both scroll directions work
-// - progress bar of song (include time elapsed and total time)
-// - show song title & subtitle
 // - pause functionality
 // - mp3 support
 // - test it with other real songs
@@ -25,7 +23,6 @@ use sfml::{
     graphics::{Font, RectangleShape, Text, Transformable, View},
     system::{Time, Vector2}
 };
-use sfml::audio::SoundSource;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum KeyDirection {
@@ -82,14 +79,23 @@ struct State {
     quit: bool,
     paused: bool,
     song_playing: bool,
-    errors: Vec<f64>
+    errors: Vec<f64>,
+    song_meta: SmMetadata
+}
+
+#[derive(Debug, Clone)]
+struct SmMetadata{
+    delay: f32,
+    title: String,
+    subtitle: String,
+    artist: String
 }
 
 #[derive(Debug)]
 struct SmFileResult {
     difficulties: Vec<String>,
     difficulties_map: HashMap<String, Vec<MapKey>>,
-    delay: f32
+    meta: SmMetadata,
 }
 
 /// GRAPHICS SETTINGS
@@ -138,8 +144,8 @@ const HISTOGRAM_BINS:usize = 41;
 
 /// TIMING SETTINGS
 // value in ms
-// the higher this is, the later the notes come in
-const KEY_DELAY:f32 = 0f32;
+// compensate for sound not lining up with when a key hits a line, around 100ms for bluetooth
+const AUDIO_DELAY:f32 = 100f32;
 
 // skip this many seconds into the song
 // moves both note track and audio
@@ -150,12 +156,12 @@ const WARMUP_SECS: i32 = 0;
 
 // how many ms to subtract from the game clock
 // should be set to the latency of your system
-// if you tend to hit notes late, set this to a positive number
+// if you tend to hit notes late but the audio seems right, set this to a positive number
 const KEY_LATENCY_OFFSET: f64 = 0.;
 
 // how many ms you can be off for a key to register as a hit
 // if you are more than this late then it will register as a miss
-const KEY_ERROR_RANGE: f64 = 150f64;
+const KEY_ERROR_RANGE: f64 = 250f64;
 
 /// DEBUG SETTINGS
 // echos keys to the console when you press them
@@ -219,6 +225,10 @@ fn sm_to_keys(str: String) -> SmFileResult {
     let mut difficulty_values:Vec<&str> = Vec::with_capacity(7);
     let mut difficulty = "";
 
+    let mut meta_title = String::new();
+    let mut meta_sub = String::new();
+    let mut meta_artist = String::new();
+
     let mut delay = 0f32;
 
     let mut is_note_section = false;
@@ -268,6 +278,15 @@ fn sm_to_keys(str: String) -> SmFileResult {
                 "#OFFSET" => {
                     // parse and convert from s to ms
                     delay = value_fixed.parse::<f32>().unwrap() * 1000.;
+                },
+                "#TITLE" => {
+                    meta_title = value_fixed.to_string();
+                },
+                "#SUBTITLE" => {
+                    meta_sub = value_fixed.to_string();
+                },
+                "#ARTIST" => {
+                    meta_artist = value_fixed.to_string();
                 },
                 _ => {
 
@@ -398,7 +417,12 @@ fn sm_to_keys(str: String) -> SmFileResult {
     SmFileResult{
         difficulties,
         difficulties_map,
-        delay
+        meta: SmMetadata{
+            delay,
+            title: meta_title,
+            subtitle: meta_sub,
+            artist: meta_artist
+        }
     }
 }
 
@@ -457,7 +481,7 @@ fn csv_to_keys(str: String) -> Vec<MapKey> {
 fn time_to_screen_height(time:f32, height_of_window: u32, include_key_delay: bool) -> f32 {
     let height_of_window = height_of_window as f32;
 
-    let val = 0.00001f32 * SCROLL_SPEED * height_of_window * (time + if include_key_delay {KEY_DELAY} else {0.}) + LINE_HEIGHT;
+    let val = 0.00001f32 * SCROLL_SPEED * height_of_window * (time + if include_key_delay { AUDIO_DELAY } else {0.}) + LINE_HEIGHT;
 
     if SCROLL_DOWNWARDS {
         return height_of_window - val
@@ -479,7 +503,7 @@ struct MapLoadResult{
     difficulties: Vec<String>,
     difficulties_map: HashMap<String, Vec<MapKey>>,
     song: String,
-    delay: f32
+    meta: SmMetadata
 }
 
 fn load_map_folder(folder: &str) -> Result<MapLoadResult, String> {
@@ -521,7 +545,12 @@ fn load_map_folder(folder: &str) -> Result<MapLoadResult, String> {
                                         keys = Some(SmFileResult{
                                             difficulties: vec!["Normal".to_string()],
                                             difficulties_map,
-                                            delay: 0.
+                                            meta: SmMetadata{
+                                                delay: 0.0,
+                                                title: "Unknown".to_string(),
+                                                subtitle: "".to_string(),
+                                                artist: "Unknown".to_string()
+                                            }
                                         });
                                     }
                                 },
@@ -542,7 +571,7 @@ fn load_map_folder(folder: &str) -> Result<MapLoadResult, String> {
                     difficulties: unwrapped.difficulties,
                     difficulties_map: unwrapped.difficulties_map,
                     song: song.unwrap().parse().unwrap(),
-                    delay: unwrapped.delay
+                    meta: unwrapped.meta
                 })
             } else {
                 Err("Did not find song and map in folder!".parse().unwrap())
@@ -576,7 +605,7 @@ fn main() {
     };
 
     let physics = move |state: &mut State| -> () {
-        let game_time = state.game_time as f64 - KEY_LATENCY_OFFSET;
+        let game_time = state.game_time as f64 - KEY_LATENCY_OFFSET - AUDIO_DELAY as f64;
 
         let check_direction = move |dir: KeyDirection, state: &mut State, key_was_released: bool| {
             if RECORD {
@@ -707,12 +736,10 @@ fn main() {
         &Default::default(),
     );
 
-
     // no v-sync to help with latency
     window.set_vertical_sync_enabled(false);
     window.set_mouse_cursor_visible(false);
     window.set_key_repeat_enabled(ENABLE_KEY_REPEAT);
-
 
     // include_bytes! builds this font into our executable, meaning that we do not need to bring
     // a resources/ folder around. very handy!
@@ -720,6 +747,7 @@ fn main() {
     let font     = Font::from_memory(include_bytes!("resources/sansation.ttf")).unwrap();
 
     let folder_result = load_map_folder("maps/included/clicktrack").unwrap();
+
 
     let easy_str = &"Easy".to_string();
 
@@ -741,11 +769,12 @@ fn main() {
         messages: vec![],
         map: folder_result.difficulties_map.get(easy).unwrap().to_vec(),
         score: 0f64,
-        game_time: -folder_result.delay as f64,
+        game_time: -folder_result.meta.clone().delay as f64,
         quit: false,
         paused: true,
         song_playing: false,
-        errors: vec![]
+        errors: vec![],
+        song_meta: folder_result.meta
     };
 
 
@@ -865,10 +894,10 @@ fn main() {
                 window.draw(&text);
             } else {
                 // set the time
-                state.game_time = (duration.as_micros()) as f64 / 1000f64 - (WARMUP_SECS * 1000) as f64 + (SECONDS_TO_SKIP * 1000) as f64 +  (-folder_result.delay as f64);
+                state.game_time = (duration.as_micros()) as f64 / 1000f64 - (WARMUP_SECS * 1000) as f64 + (SECONDS_TO_SKIP * 1000) as f64 +  (-state.song_meta.delay as f64);
             }
 
-            if !state.song_playing && !state.paused && state.game_time - (-folder_result.delay as f64) >= 0.{
+            if !state.song_playing && !state.paused && state.game_time - (-state.song_meta.delay as f64) >= 0.{
                 song.set_playing_offset(Time::seconds(0.));
                 song.play();
                 state.song_playing = true;
@@ -1043,10 +1072,25 @@ fn main() {
             }
             let fps = last_60_frames.iter().sum::<u128>() as usize / last_60_frames.len();
 
-            let mut text = Text::new(&format!("{} FPS\nScore: {:.3}", fps, state.score / 1000.), &font, 15);
-            text.set_fill_color(Color::WHITE);
-            text.set_position((700., 0.));
-            window.draw(&text);
+            let text_height = if SCROLL_DOWNWARDS { HEIGHT as f32 - LINE_HEIGHT } else { 0. };
+
+            let meta = &state.song_meta;
+
+            let mut title_text = Text::new(&format!("{}", meta.title), &font, 22);
+            title_text.set_fill_color(Color::WHITE);
+            title_text.set_position((700., text_height));
+            window.draw(&title_text);
+
+            let mut sub_text = Text::new(&format!("{} - {}", meta.subtitle, meta.artist), &font, 12);
+            sub_text.set_fill_color(Color::WHITE);
+            sub_text.set_position((700., text_height + 25.));
+            window.draw(&sub_text);
+
+
+            let mut score_and_fps = Text::new(&format!("{} FPS\nScore: {:.3}", fps, state.score / 1000.), &font, 15);
+            score_and_fps.set_fill_color(Color::WHITE);
+            score_and_fps.set_position((WIDTH as f32 - 120., text_height));
+            window.draw(&score_and_fps);
 
             let mut c = state.messages.clone();
             c.retain(|message| state.game_time - message.time < MESSAGE_DURATION);
