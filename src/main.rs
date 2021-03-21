@@ -8,7 +8,7 @@ fn main() {
         &Default::default(),
     );
 
-    let font = Font::from_file("src/resources/sansation.ttf").unwrap();
+    let font = Font::from_memory(include_bytes!("resources/sansation.ttf")).unwrap();
     let text = Text::new(&String::from("Hello, World!"), &font, 24);
 
     'main: loop {
