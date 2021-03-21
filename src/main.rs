@@ -144,7 +144,7 @@ const HISTOGRAM_BINS:usize = 41;
 /// TIMING SETTINGS
 // value in ms
 // compensate for sound not lining up with when a key hits a line, around 100ms for bluetooth
-const AUDIO_DELAY:f32 = 100f32;
+const AUDIO_DELAY:f32 = 200f32;
 
 // skip this many seconds into the song
 // moves both note track and audio
@@ -276,7 +276,7 @@ fn sm_to_keys(str: String) -> SmFileResult {
                 }
                 "#OFFSET" => {
                     // parse and convert from s to ms
-                    delay = value_fixed.parse::<f32>().unwrap() * 1000.;
+                    delay = -(value_fixed.parse::<f32>().unwrap() * 1000.);
                 },
                 "#TITLE" => {
                     meta_title = value_fixed.to_string();
@@ -745,7 +745,7 @@ fn main() {
     // we unwrap because it should crash if the font isn't there (a bug)
     let font = Font::from_memory(include_bytes!("resources/sansation.ttf")).unwrap();
 
-    let folder_result = load_map_folder("maps/included/clicktrack").unwrap();
+    let folder_result = load_map_folder("maps/user/Snow halation but shawty's like a melody in my head (XingRen)").unwrap();
 
 
     let easy_str = &"Easy".to_string();

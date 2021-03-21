@@ -1,12 +1,10 @@
-#TITLE:Cyber Induction;
-#SUBTITLE:IcyWorld;
+#TITLE:Test track;
+#SUBTITLE:Subtitles are cool!;
 #ARTIST:programmer5000;
 #MUSIC:track.ogg;
 #SELECTABLE:YES;
 #CDTITLE:;
-#OFFSET:1;
-#SAMPLESTART:175.120;
-#SAMPLELENGTH:20.000;
+#OFFSET:-1;
 #BPMS:0=200;
 //---------------dance-single - ----------------
 #NOTES:
