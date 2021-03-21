@@ -4,9 +4,9 @@
 // - mp3 support
 // - test it with other real songs
 // - user-configured delay and constants
-// - compile for windows (ask discord for help)
 // - inspect performance with crox
 // - auto-updater
+// - fix windowscompile to add DLLs
 
 use std::cmp::max;
 use std::collections::HashMap;
