@@ -6,7 +6,6 @@
 // - user-configured delay and constants
 // - inspect performance with crox
 // - auto-updater
-// - fix windowscompile to add DLLs
 
 use std::cmp::max;
 use std::collections::HashMap;
