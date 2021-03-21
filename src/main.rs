@@ -262,7 +262,7 @@ fn sm_to_keys(str: String) -> SmFileResult {
             let key = split[0];
             let value = split[1];
 
-            // derefrence the value, remove the semi, re-refrence it
+            // dereference the value, remove the semi, re-reference it
             let value_fixed = if value.len() > 1 {&((*(value))[0..((value.len())-1)]) } else { "" };
 
             if is_difficulty_header && key != "#NOTES"{
@@ -743,9 +743,9 @@ fn main() {
     // include_bytes! builds this font into our executable, meaning that we do not need to bring
     // a resources/ folder around. very handy!
     // we unwrap because it should crash if the font isn't there (a bug)
-    let font = Font::from_memory(include_bytes!("resources/sansation.ttf")).unwrap();
+    let font = Font::from_memory(include_bytes!("resources/Roboto-Regular.ttf")).unwrap();
 
-    let folder_result = load_map_folder("maps/user/Snow halation but shawty's like a melody in my head (XingRen)").unwrap();
+    let folder_result = load_map_folder("maps/included/clicktrack").unwrap();
 
 
     let easy_str = &"Easy".to_string();
@@ -777,7 +777,7 @@ fn main() {
     };
 
 
-    // supports ogg, wav, flac, aiff, au, raw, paf, svx, nist, voc, ircam, w64, mat4, mat5 pvf, htk, sds, avr, sd2, caf, wve, mpc2k, rf64, see https://docs.rs/sfml/0.14.0/sfml/audio/struct.SoundBuffer.html
+    // supports ogg, wav, flac, aiff, and others, see https://docs.rs/sfml/0.14.0/sfml/audio/struct.SoundBuffer.html
     let song_buffer = SoundBuffer::from_file(&folder_result.song).unwrap();
     let mut song = Sound::with_buffer(&song_buffer);
 
