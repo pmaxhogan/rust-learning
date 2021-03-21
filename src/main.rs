@@ -1,8 +1,6 @@
 // TODOs:
-// - re-check that both scroll directions work
 // - pause functionality
 // - mp3 support
-// - test it with other real songs
 // - user-configured delay and constants
 // - inspect performance with crox
 // - add measure lines
@@ -1094,7 +1092,7 @@ fn main() {
 
             let mut score_and_fps = Text::new(&format!("{} FPS\nScore: {:.3}", fps, state.score / 1000.), &font, 15);
             score_and_fps.set_fill_color(Color::WHITE);
-            score_and_fps.set_position((WIDTH as f32 - 120., text_height));
+            score_and_fps.set_position((width as f32 - 120., text_height));
             window.draw(&score_and_fps);
 
             let mut c = state.messages.clone();
