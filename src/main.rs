@@ -5,6 +5,7 @@
 // - test it with other real songs
 // - user-configured delay and constants
 // - inspect performance with crox
+// - add measure lines
 // - auto-updater
 
 use std::cmp::max;
@@ -116,7 +117,7 @@ const SCROLL_SPEED: f32 = 50f32;
 const MESSAGE_SIZE: u32 = 20;
 
 // set to false for the notes to scroll upwards
-const SCROLL_DOWNWARDS: bool = false;
+const SCROLL_DOWNWARDS: bool = true;
 
 // how long a message stays on the screen
 const MESSAGE_DURATION: f64 = 250.;
@@ -211,7 +212,9 @@ fn sm_to_keys(str: String) -> SmFileResult {
     let mut bpms_str = String::new();
     let mut bpms_on = false;
 
-    let mut measure = 0;
+    // could be used in the future for measure lines
+    let mut _measure = 0;
+
     let mut current_beat = 0;
     let mut current_bpm = 0.;
 
@@ -381,7 +384,7 @@ fn sm_to_keys(str: String) -> SmFileResult {
 
             measure_string = String::new();
 
-            measure += 1;
+            _measure += 1;
         }
 
 
@@ -389,7 +392,7 @@ fn sm_to_keys(str: String) -> SmFileResult {
             difficulties_map.insert(difficulty.to_string(), keys);
             keys = vec![];
 
-            measure = 0;
+            _measure = 0;
             current_beat = 0;
             current_bpm = 0.;
             current_time = 0.;
@@ -425,6 +428,7 @@ fn sm_to_keys(str: String) -> SmFileResult {
     }
 }
 
+#[allow(dead_code)]
 fn convert_to_csv(keys: &Vec<MapKey>) {
     let mut keys = keys.clone();
     let mut data = String::from("Time\tDirection\n");
@@ -917,7 +921,7 @@ fn main() {
 
                 // if the key is definitely not on the screen, we can quit right now
                 if ((screen_pos < -(NO_RENDER_BUFFER as f32) && screen_pos_end < -(NO_RENDER_BUFFER as f32)) ||
-                    (screen_pos > (HEIGHT + NO_RENDER_BUFFER) as f32 && screen_pos_end > (HEIGHT + NO_RENDER_BUFFER) as f32)) ||
+                    (screen_pos > (height + NO_RENDER_BUFFER) as f32 && screen_pos_end > (height + NO_RENDER_BUFFER) as f32)) ||
                     map_key.hit {
                     continue;
                 }
@@ -1071,7 +1075,9 @@ fn main() {
             }
             let fps = last_60_frames.iter().sum::<u128>() as usize / last_60_frames.len();
 
-            let text_height = if SCROLL_DOWNWARDS { HEIGHT as f32 - LINE_HEIGHT } else { 0. };
+            let text_height = if SCROLL_DOWNWARDS { height as f32 - LINE_HEIGHT } else { 0. };
+
+            let height_direction = if SCROLL_DOWNWARDS { -1. } else { 1. };
 
             let meta = &state.song_meta;
 
