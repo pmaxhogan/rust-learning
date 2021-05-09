@@ -143,7 +143,7 @@ const HISTOGRAM_BINS:usize = 41;
 /// TIMING SETTINGS
 // value in ms
 // compensate for sound not lining up with when a key hits a line, around 100ms for bluetooth
-const AUDIO_DELAY:f32 = 200f32;
+const AUDIO_DELAY:f32 = 100f32;
 
 // skip this many seconds into the song
 // moves both note track and audio
@@ -548,9 +548,9 @@ fn load_map_folder(folder: &str) -> Result<MapLoadResult, String> {
                                             difficulties_map,
                                             meta: SmMetadata{
                                                 delay: 0.0,
-                                                title: "Unknown".to_string(),
+                                                title: "Don't Stop Believin'".to_string(),
                                                 subtitle: "".to_string(),
-                                                artist: "Unknown".to_string()
+                                                artist: "Journey".to_string()
                                             }
                                         });
                                     }
@@ -747,7 +747,7 @@ fn main() {
     // we unwrap because it should crash if the font isn't there (a bug)
     let font = Font::from_memory(include_bytes!("resources/Roboto-Regular.ttf")).unwrap();
 
-    let folder_result = load_map_folder("maps/included/clicktrack").unwrap();
+    let folder_result = load_map_folder("maps/included/Journey - Don't Stop Believin'").unwrap();
 
 
     let easy_str = &"Easy".to_string();
@@ -1084,7 +1084,13 @@ fn main() {
             title_text.set_position((700., text_height));
             window.draw(&title_text);
 
-            let mut sub_text = Text::new(&format!("{} - {}", meta.subtitle, meta.artist), &font, 12);
+            let mut sub_text;
+            if meta.subtitle.is_empty() {
+                sub_text = Text::new(&format!("{}", meta.artist), &font, 12);
+            }else{
+                sub_text = Text::new(&format!("{} - {}", meta.subtitle, meta.artist), &font, 12);
+            }
+
             sub_text.set_fill_color(Color::WHITE);
             sub_text.set_position((700., text_height + 25.));
             window.draw(&sub_text);
